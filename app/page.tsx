@@ -147,11 +147,11 @@ export default function Home() {
           onClick={handleProgressClick}
         >
           <div
-            className="h-full bg-black dark:bg-white transition-all group-hover:bg-neutral-800 dark:group-hover:bg-neutral-200"
+            className="h-full bg-black dark:bg-white transition-all duration-300 group-hover:bg-neutral-800 dark:group-hover:bg-neutral-200"
             style={{ width: `${progress}%` }}
           />
           <div
-            className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-black dark:bg-white transition-all"
+            className="absolute top-2 -translate-y-1/2 w-2.5 h-3 rounded-full bg-black dark:bg-white transition-all duration-300"
             style={{ left: `${progress}%`, transform: 'translate(-50%, -50%)' }}
           />
         </div>
