@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import MapDraw from "@/components/ui/MapDraw"
 
 import { getCurrentTravelData, getPreviousTravelData } from "@/functions/db"
 import { useProgress } from "@/contexts/ProgressContext"
