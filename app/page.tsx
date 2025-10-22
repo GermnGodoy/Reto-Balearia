@@ -63,7 +63,11 @@ export default function Home() {
         <TabsContent
           value="page1"
           className="flex-1 bg-white dark:bg-black m-0 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-300"
-        />
+        >
+          <div className="w-full h-full min-h-[400px]">
+            <MapDraw />
+          </div>
+        </TabsContent>
         <TabsContent
           value="page2"
           className="flex-1 bg-white dark:bg-black m-0 overflow-auto p-6 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-300"
