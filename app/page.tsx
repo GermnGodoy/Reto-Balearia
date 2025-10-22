@@ -8,6 +8,9 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { Play, Pause, SkipBack, SkipForward, DollarSign, Users, ArrowUp, ArrowDown } from "lucide-react"
 import { Area, AreaChart, CartesianGrid, XAxis, RadialBarChart, RadialBar, PolarGrid, PolarRadiusAxis, Line, LineChart, ComposedChart, ErrorBar } from "recharts"
 import travelsData from "@/data/travels.json"
+import dynamic from "next/dynamic";
+
+const MapDraw = dynamic(() => import("@/components/ui/MapDraw"), { ssr: false });
 
 export default function Home() {
   // Progreso (esto seria el tiempo que se podria pillar segun los dias del dataset)
@@ -250,7 +253,11 @@ export default function Home() {
         <TabsContent
           value="page1"
           className="flex-1 bg-white dark:bg-black m-0 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-300"
-        />
+        >
+          <div className="w-full h-full min-h-[400px]">
+            <MapDraw />
+          </div>
+        </TabsContent>
         <TabsContent
           value="page2"
           className="flex-1 bg-white dark:bg-black m-0 overflow-auto p-6 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-300"
