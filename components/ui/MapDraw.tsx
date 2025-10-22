@@ -188,7 +188,7 @@ export default function DrawMap() {
       try {
         layer.setData(heatPoints);
         layer.set("gradient", SEA_ROUTE_GRADIENT);
-        layer.set("radius", 30);
+        layer.set("radius", 20);
         layer.set("opacity", 0.9);
         if (!layer.getMap()) layer.setMap(map);
         // Debug info
@@ -305,8 +305,8 @@ export default function DrawMap() {
             data={heatPoints!}
             options={{
               dissipating: true,
-              radius: 30,
-              opacity: 0.9,
+              radius: 20,
+              opacity: 0.8,
               gradient: SEA_ROUTE_GRADIENT,
             }}
             onLoad={(layer) => {

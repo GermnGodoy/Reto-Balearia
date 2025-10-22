@@ -14,13 +14,13 @@ export type RouteId = string;
  */
 export const HEAT_SIGNATURES: Record<RouteId, number> = {
   "Alcúdia|Barcelona": 0.5,
-  "Barcelona|Ciutadella": 0.9,
-  "Barcelona|Palma": 1.2,
-  "Dénia|Formentera": 1.6,
-  "Dénia|Ibiza": 1.8,
-  "Formentera|València": 0.7,
-  "Ibiza|València": 2.1,
-  "Palma|València": 1.5,
+  "Barcelona|Ciutadella": 0.8,
+  "Barcelona|Palma": 0.2,
+  "Dénia|Formentera": 0.3,
+  "Dénia|Ibiza": 0.5,
+  "Formentera|València": 0.2,
+  "Ibiza|València": 0.9,
+  "Palma|València": 0.2,
   // Add more as needed…
 };
 
