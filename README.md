@@ -21,7 +21,7 @@ Metrics Dashboard
      
 ## Data Integration
 
-- [ ]Connect all components to use Cloud data instead of JSON files
+- [ ] Connect all components to use Cloud data instead of JSON files
 
 ## Developer Tools
 
