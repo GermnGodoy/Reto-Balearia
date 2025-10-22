@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Play, Pause, SkipBack, SkipForward, DollarSign, Users, ArrowUp, ArrowDown } from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis, RadialBarChart, RadialBar, PolarGrid, PolarRadiusAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, RadialBarChart, RadialBar, PolarGrid, PolarRadiusAxis, Line, LineChart, ComposedChart, ErrorBar } from "recharts"
 import travelsData from "@/data/travels.json"
 
 export default function Home() {
@@ -120,19 +120,31 @@ export default function Home() {
     for (let i = startProgress; i <= roundedProgress; i++) {
       let totalProfit = 0
       let totalPeople = 0
+      let totalPredictedProfit = 0
+      let totalPredictedPeople = 0
+      let totalProfitError = 0
+      let totalPeopleError = 0
 
       travelsData.forEach(travel => {
         const timelineData = travel.timeline.find(t => t.progress === i)
         if (timelineData) {
           totalProfit += timelineData.profit
           totalPeople += timelineData.people
+          totalPredictedProfit += timelineData.predictedProfit
+          totalPredictedPeople += timelineData.predictedPeople
+          totalProfitError += Math.abs(timelineData.profitError)
+          totalPeopleError += Math.abs(timelineData.peopleError)
         }
       })
 
       data.push({
         progress: i,
         profit: totalProfit,
-        people: totalPeople
+        people: totalPeople,
+        predictedProfit: totalPredictedProfit,
+        predictedPeople: totalPredictedPeople,
+        profitError: totalProfitError > 0 ? totalProfitError : 0,
+        peopleError: totalPeopleError > 0 ? totalPeopleError : 0
       })
     }
 
@@ -349,13 +361,17 @@ export default function Home() {
                   <ChartContainer
                     config={{
                       profit: {
-                        label: "Profit",
+                        label: "Actual Profit",
                         color: trends.profit.color,
+                      },
+                      predictedProfit: {
+                        label: "Predicted Profit",
+                        color: "hsl(142.1 76.2% 36.3%)",
                       },
                     }}
                     className="h-[250px] w-full"
                   >
-                    <AreaChart data={historicalData}>
+                    <ComposedChart data={historicalData}>
                       <defs>
                         <linearGradient id="fillProfit" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={trends.profit.color} stopOpacity={0.8} />
@@ -380,7 +396,24 @@ export default function Home() {
                         fill="url(#fillProfit)"
                         strokeWidth={2}
                       />
-                    </AreaChart>
+                      <Line
+                        type="monotone"
+                        dataKey="predictedProfit"
+                        stroke="white"
+                        strokeWidth={3}
+                        strokeDasharray="5 5"
+                        strokeOpacity={0.9}
+                        dot={{ fill: "white", r: 5, strokeWidth: 0 }}
+                      >
+                        <ErrorBar
+                          dataKey="profitError"
+                          width={8}
+                          strokeWidth={1.5}
+                          stroke="white"
+                          opacity={0.3}
+                        />
+                      </Line>
+                    </ComposedChart>
                   </ChartContainer>
                 </CardContent>
               </Card>
@@ -397,13 +430,17 @@ export default function Home() {
                   <ChartContainer
                     config={{
                       people: {
-                        label: "People",
+                        label: "Actual People",
                         color: trends.people.color,
+                      },
+                      predictedPeople: {
+                        label: "Predicted People",
+                        color: "hsl(221.2 83.2% 53.3%)",
                       },
                     }}
                     className="h-[250px] w-full"
                   >
-                    <AreaChart data={historicalData}>
+                    <ComposedChart data={historicalData}>
                       <defs>
                         <linearGradient id="fillPeople" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={trends.people.color} stopOpacity={0.8} />
@@ -428,7 +465,24 @@ export default function Home() {
                         fill="url(#fillPeople)"
                         strokeWidth={2}
                       />
-                    </AreaChart>
+                      <Line
+                        type="monotone"
+                        dataKey="predictedPeople"
+                        stroke="white"
+                        strokeWidth={3}
+                        strokeDasharray="5 5"
+                        strokeOpacity={0.9}
+                        dot={{ fill: "white", r: 5, strokeWidth: 0 }}
+                      >
+                        <ErrorBar
+                          dataKey="peopleError"
+                          width={8}
+                          strokeWidth={1.5}
+                          stroke="white"
+                          opacity={0.3}
+                        />
+                      </Line>
+                    </ComposedChart>
                   </ChartContainer>
                 </CardContent>
               </Card>
