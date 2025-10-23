@@ -7,6 +7,9 @@ import { useProgress } from "@/contexts/ProgressContext"
 import { TrendChart } from "@/components/charts/TrendChart"
 import Gauge from "@/components/ui/gauge"
 
+import { CollapsibleCard, CollapsibleCardContent, CollapsibleCardHeader, CollapsibleCardTitle, CollapsibleCardDescription } from "../ui/collapsible-card"
+
+
 export default function StatsTab() {
   const { progress } = useProgress()
   const {
@@ -58,6 +61,18 @@ export default function StatsTab() {
                 </div>
               </CardContent>
             </Card>
+                  <CollapsibleCard>
+                    <CollapsibleCardHeader>
+                      <CollapsibleCardTitle>Trip to
+                  Barcelona</CollapsibleCardTitle>
+                      <CollapsibleCardDescription>
+                        View detailed information about this travel
+                      </CollapsibleCardDescription>
+                    </CollapsibleCardHeader>
+                    <CollapsibleCardContent>
+                      <p>Your content goes here...</p>
+                    </CollapsibleCardContent>
+                  </CollapsibleCard>
 
             {/* Area Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
