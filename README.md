@@ -2,8 +2,8 @@
 
 ## Map Implementation
 
-- [ ] Add map functionality
-- [ ] Implement heatmap overlay on the map (based on a parameter to be determined)
+- [x] Add map functionality
+- [x] Implement heatmap overlay on the map (based on a parameter to be determined)
 
 Metrics Dashboard
 
