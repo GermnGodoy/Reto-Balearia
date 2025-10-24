@@ -22,10 +22,12 @@ export type RouteSpec =
 export const DEFAULT_ROUTES: RouteSpec[] = [
   { from: "València", to: "Ibiza", dashed: true },
   { from: "València", to: "Palma", dashed: true },
-  { from: "València", to: "Formentera", dashed: true },
+  { from: "Palma", to: "Ibiza", dashed: true },
+  { from: "Ibiza", to: "Formentera", dashed: true },
   { from: "Dénia", to: "Ibiza", dashed: true },
   { from: "Dénia", to: "Formentera", dashed: true },
   { from: "Barcelona", to: "Palma", dashed: true },
   { from: "Barcelona", to: "Alcúdia", dashed: true },
   { from: "Barcelona", to: "Ciutadella", dashed: true },
+  { from: "Ciutadella", to: "Alcúdia", dashed: true },
 ];
