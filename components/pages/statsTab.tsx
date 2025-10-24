@@ -6,6 +6,14 @@ import { useTravelStats } from "@/hooks/useTravelStats"
 import { useProgress } from "@/contexts/ProgressContext"
 import { TrendChart } from "@/components/charts/TrendChart"
 import Gauge from "@/components/ui/gauge"
+import { SankeyChart } from "@/components/charts/SankeyChart"
+import modelWeightsData from "@/data/model-weights.json"
+
+import InsightCards from "../ui/insightCards"
+
+import { CollapsibleCard, CollapsibleCardContent, CollapsibleCardHeader, CollapsibleCardTitle, CollapsibleCardDescription } from "../ui/collapsible-card"
+import Explanations from "../Explanations"
+
 
 export default function StatsTab() {
   const { progress } = useProgress()
@@ -16,6 +24,10 @@ export default function StatsTab() {
     historicalData,
     trends
   } = useTravelStats(progress)
+
+  // Find the model weights for the current progress
+  const currentModelWeights = modelWeightsData.find(item => item.progress === Math.floor(progress)) || modelWeightsData[0]
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
             {/* Gauge Chart */}
@@ -58,6 +70,29 @@ export default function StatsTab() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Model Feature Weights */}
+            <CollapsibleCard collapsedTitle="ML Model Feature Weights">
+              <CollapsibleCardHeader>
+                <CollapsibleCardTitle>Model Feature Importance</CollapsibleCardTitle>
+                <CollapsibleCardDescription>
+                  How different parameters contribute to the prediction at progress {progress}
+                </CollapsibleCardDescription>
+              </CollapsibleCardHeader>
+              <CollapsibleCardContent>
+                <Explanations />
+                <SankeyChart
+                  key={`sankey-${Math.floor(progress)}`}
+                  data={{
+                    nodes: currentModelWeights.nodes,
+                    links: currentModelWeights.links
+                  }}
+                  height={350}
+                  width={1000}
+                />
+                <InsightCards />
+              </CollapsibleCardContent>
+            </CollapsibleCard>
 
             {/* Area Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
