@@ -16,7 +16,7 @@ let cachedClient: GoogleGenerativeAI | null = null;
 
 function ensureClient() {
   if (!cachedClient) {
-    const apiKey = "AIzaSyDd8HBHBQXQ2Vokx1JB7OYft1ssOG6Ck7k"; //Delete API
+    const apiKey = "YOUR-GEMINI-API-KEY"; //Delete API
     if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
     cachedClient = new GoogleGenerativeAI(apiKey);
   }
