@@ -10,6 +10,7 @@ import { useTravels } from "@/contexts/travelsContext"
 import StatsTab from "@/components/pages/statsTab"
 import Footer from "@/components/Footer"
 import TravelsTab from "@/components/pages/travelsTab"
+import ChatbotLauncher from "@/components/chat/ChatbotLauncher"
 
 export default function Home() {
   // Get progress state from context
@@ -84,6 +85,9 @@ export default function Home() {
       </Tabs>
 
       <Footer />
+
+            {/*Floating button + right-side chat window */}
+      <ChatbotLauncher />
     </div>
   )
 }
