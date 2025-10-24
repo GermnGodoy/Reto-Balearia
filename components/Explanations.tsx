@@ -21,7 +21,7 @@ export default function Explanations() {
           </div>
           <div className="flex-1">
             <h4 className="text-base font-semibold text-black dark:text-white mb-2 flex items-center gap-2">
-              Comentarios de Baleito
+              Estrategia
             </h4>
             <p className="text-base text-neutral-700 dark:text-neutral-200 leading-relaxed">
               These insights are generated based on the last 15 days of travel data and ML model feature weights.
