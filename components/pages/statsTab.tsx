@@ -6,7 +6,7 @@ import { useTravelStats } from "@/hooks/useTravelStats"
 import { useProgress } from "@/contexts/ProgressContext"
 import { TrendChart } from "@/components/charts/TrendChart"
 import Gauge from "@/components/ui/gauge"
-import { SankeyChart } from "@/components/charts/SankeyChart"
+import { SHAPChart } from "@/components/charts/SHAPChart"
 import modelWeightsData from "@/data/model-weights.json"
 
 import InsightCards from "../ui/insightCards"
@@ -72,23 +72,22 @@ export default function StatsTab() {
             </Card>
 
             {/* Model Feature Weights */}
-            <CollapsibleCard collapsedTitle="ML Model Feature Weights">
+            <CollapsibleCard collapsedTitle="Explicaciones de Baleito">
               <CollapsibleCardHeader>
-                <CollapsibleCardTitle>Model Feature Importance</CollapsibleCardTitle>
+                <CollapsibleCardTitle>Explicaciones de Baleito</CollapsibleCardTitle>
                 <CollapsibleCardDescription>
-                  How different parameters contribute to the prediction at progress {progress}
+                  y explicabilidad del modelo para las decisiones tomadas en {Math.floor(progress)}.
                 </CollapsibleCardDescription>
               </CollapsibleCardHeader>
               <CollapsibleCardContent>
                 <Explanations />
-                <SankeyChart
-                  key={`sankey-${Math.floor(progress)}`}
+                <SHAPChart
+                  key={`shap-${Math.floor(progress)}`}
                   data={{
                     nodes: currentModelWeights.nodes,
                     links: currentModelWeights.links
                   }}
-                  height={350}
-                  width={1000}
+                  className="h-[400px] w-full"
                 />
                 <InsightCards />
               </CollapsibleCardContent>
