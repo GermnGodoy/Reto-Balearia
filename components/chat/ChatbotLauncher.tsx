@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -81,19 +82,27 @@ export default function ChatbotLauncher() {
       setLoading(false);
     }
   };
-
+  //TODO: Change the text "open chat" with the icon given and change background to white
   return (
     <>
       {!open && (
         <button
           onClick={() => setOpen(true)}
           aria-expanded={open}
-          className="fixed bottom-4 right-4 z-50 rounded-full shadow-lg border bg-gradient-to-tr from-black to-neutral-700 text-white dark:from-white dark:to-neutral-200 dark:text-black px-4 py-3 text-sm hover:opacity-90"
+          
+          className="fixed bottom-4 right-4 z-50 p-0 rounded-full hover:shadow-[0_14px_48px_rgba(0,0,0,0.45)] shadow-lg border bg-white from-black to-neutral-700 text-white dark:from-white dark:to-neutral-200 dark:text-black px-4 py-3 text-sm hover:opacity-90"
         >
-          Open Chat
+          <Image
+            src="/baleito.png"   // put baleito.png in /public
+            alt="Open chat"
+            width={90}
+            height={90}
+            className="h-10 w-10 rounded-full object-cover"
+            priority
+          />
         </button>
       )}
-
+        {/*TO Do: change upper buton with logo*/ }
       {/* Rounded floating drawer without blocking backdrop */}
       <div
         className={`fixed right-2 md:right-4 top-2 md:top-4 bottom-2 md:bottom-4 z-50
@@ -101,10 +110,10 @@ export default function ChatbotLauncher() {
           transform transition-transform duration-300 ease-out
           ${open ? "translate-x-0" : "translate-x-[120%]"}
           rounded-3xl border border-neutral-200 dark:border-neutral-800
-          bg-white/95 dark:bg-neutral-950/90 backdrop-blur-md shadow-[0_12px_50px_rgba(0,0,0,0.2)]
+          bg-[#e0efef] dark:bg-neutral-950/90 backdrop-blur-md shadow-[0_12px_50px_rgba(0,0,0,0.2)]
           flex flex-col`}
         role="complementary"
-        aria-label="Gemini Assistant"
+        aria-label="Baleito"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/80 dark:border-neutral-800/80 rounded-t-3xl">
           <div className="font-semibold">Gemini Assistant</div>
@@ -127,7 +136,7 @@ export default function ChatbotLauncher() {
                 ${
                   m.role === "user"
                     ? "ml-auto bg-black text-white dark:bg-white dark:text-black ring-black/10 dark:ring-white/20"
-                    : "mr-auto bg-neutral-100 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100 ring-black/5 dark:ring-white/10"
+                    : "mr-auto bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100 ring-black/5 dark:ring-white/10"
                 }`}
             >
               {m.content}
@@ -135,7 +144,7 @@ export default function ChatbotLauncher() {
           ))}
 
           {loading && (
-            <div className="mr-auto max-w-[85%] rounded-2xl px-3 py-2 text-sm bg-neutral-100 dark:bg-neutral-900 ring-1 ring-black/5 dark:ring-white/10">
+            <div className="mr-auto max-w-[85%] rounded-2xl px-3 py-2 text-sm bg-[#e0efef] dark:bg-neutral-900 ring-1 ring-black/5 dark:ring-white/10">
               Thinking…
             </div>
           )}
