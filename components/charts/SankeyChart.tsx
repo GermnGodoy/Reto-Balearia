@@ -22,25 +22,18 @@ type SankeyChartProps = {
   data: SankeyData
   className?: string
   height?: number
+  width?: number
 }
-
-const COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-]
 
 export function SankeyChart({
   data,
   className = "h-[400px] w-full",
   height = 400,
+  width = 800,
 }: SankeyChartProps) {
-  const config: ChartConfig = data.nodes.reduce((acc, node, index) => {
+  const config: ChartConfig = data.nodes.reduce((acc, node) => {
     acc[node.name] = {
       label: node.name,
-      color: COLORS[index % COLORS.length],
     }
     return acc
   }, {} as ChartConfig)
@@ -58,17 +51,17 @@ export function SankeyChart({
 
   const CustomNode = ({ x, y, width, height, index, payload }: any) => {
     const isOut = x + width + 6 > 600
-    const color = COLORS[index % COLORS.length]
 
     return (
       <Layer key={`node-${index}`}>
-        <Rectangle
+        <rect
           x={x}
           y={y}
           width={width}
           height={height}
-          fill={color}
-          fillOpacity="0.9"
+          fillOpacity="0.95"
+          strokeWidth={1}
+          className="fill-black dark:fill-white stroke-neutral-300 dark:stroke-neutral-700"
         />
         <text
           textAnchor={isOut ? "end" : "start"}
@@ -85,7 +78,7 @@ export function SankeyChart({
           x={isOut ? x - 6 : x + width + 6}
           y={y + height / 2 + 16}
           fontSize="11"
-          className="fill-neutral-600 dark:fill-neutral-400"
+          className="fill-neutral-500 dark:fill-neutral-300"
         >
           {payload.value}
         </text>
@@ -94,9 +87,6 @@ export function SankeyChart({
   }
 
   const CustomLink = ({ sourceX, targetX, sourceY, targetY, sourceControlX, targetControlX, linkWidth, index }: any) => {
-    const link = sankeyData.links[index]
-    const color = COLORS[link.source % COLORS.length]
-
     return (
       <path
         key={`link-${index}`}
@@ -105,10 +95,9 @@ export function SankeyChart({
           C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}
         `}
         fill="none"
-        stroke={color}
         strokeWidth={linkWidth}
-        strokeOpacity="0.3"
-        className="hover:stroke-opacity-50 transition-all"
+        strokeOpacity="0.5"
+        className="stroke-neutral-300 dark:stroke-neutral-600 hover:stroke-opacity-70 transition-all"
       />
     )
   }
@@ -117,12 +106,12 @@ export function SankeyChart({
     <ChartContainer config={config} className={className}>
       <Sankey
         data={sankeyData}
-        width={800}
+        width={width}
         height={height}
         node={<CustomNode />}
         link={<CustomLink />}
         nodePadding={20}
-        margin={{ top: 20, right: 120, bottom: 20, left: 120 }}
+        margin={{ top: 30, right: 120, bottom: 20, left: 120 }}
       >
         <Tooltip
           content={({ active, payload }: any) => {

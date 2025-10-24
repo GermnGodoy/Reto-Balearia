@@ -48,7 +48,7 @@ function CollapsibleCard({
         aria-expanded={!isCollapsed}
       >
         {isCollapsed ? (
-          <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center justify-between px-6 py-4 cursor-pointer">
             <div className="flex-1">
               <div className="text-sm font-semibold text-black dark:text-white">
                 {collapsedTitle}
@@ -60,7 +60,7 @@ function CollapsibleCard({
           </div>
         ) : (
           <ChevronDown
-            className="h-3.5 w-3.5 text-neutral-500 dark:text-neutral-400 transition-transform duration-200 rotate-180"
+            className="h-3.5 w-3.5 text-neutral-500 dark:text-neutral-400 transition-transform duration-200 rotate-180 cursor-pointer"
           />
         )}
       </button>
