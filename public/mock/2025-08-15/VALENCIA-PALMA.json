@@ -1,0 +1,37 @@
+{
+  "explanation": {
+    "strategy": "Mock strategy for wiring UI",
+    "cards": [
+      { "type": "peaks", "title": "Demand Peaks", "windows": ["07:00–08:00", "18:00–19:00"] },
+      { "type": "promo", "title": "Promo Windows", "windows": ["12:00–13:00"] }
+    ],
+    "weights": {
+      "seasonality": 0.25,
+      "day_of_week": 0.15,
+      "lead_time": 0.10,
+      "capacity": 0.20,
+      "competition": 0.10,
+      "weather": 0.10,
+      "events": 0.10
+    }
+  },
+  "data": [
+    { "pred_demand": 10, "pred_price": 4.5 }
+  ],
+  "metrics": { "R2": 0.98, "conf": 4 },
+  "reasoning": {
+    "base_price": 50,
+    "dynamic_factor": 3,
+    "competitive_factor": 0.8,
+    "elasticity": 5
+  },
+  "prev_data": [
+    { "date": "2025-08-14", "occupation": 0.62, "price": 47.0 },
+    { "date": "2025-08-13", "occupation": 0.58, "price": 46.5 },
+    { "date": "2025-08-12", "occupation": 0.71, "price": 49.0 },
+    { "date": "2025-08-11", "occupation": 0.62, "price": 47.0 },
+    { "date": "2025-08-10", "occupation": 0.58, "price": 46.5 },
+    { "date": "2025-08-09", "occupation": 0.71, "price": 49.0 },
+    { "date": "2025-08-08", "occupation": 0.71, "price": 49.0 }
+  ]
+}
