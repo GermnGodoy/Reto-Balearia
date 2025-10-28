@@ -29,7 +29,6 @@ const circleIcon = (fill: string): google.maps.Icon => ({
   anchor: new google.maps.Point(14, 14), // coordinate at circle center
 });
 
-
 // Pretty SVG pin you can recolor anytime
 const makeSvgPin = ({
   fill = "#2563eb",
@@ -56,7 +55,6 @@ const portIcon = (isHeatMode = false): google.maps.Icon => ({
   labelOrigin: new google.maps.Point(18, 12), // where the label text sits
 });
 
-
 import {
   drawRoutes,
   dashedPolylineOptions,
@@ -66,7 +64,7 @@ import {
   buildHeatDataFromRoutes,
   SEA_ROUTE_GRADIENT,
 } from "@/lib/map/heatmap";
-import { HEAT_SIGNATURES } from "@/data/heat-signatures";
+import { useHeatSignatures } from "@/data/heat-signatures";
 
 // FIX: correct file name
 import WeatherForecastLayer from "@/lib/map/WeatherForecastLayes";
@@ -118,7 +116,6 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
 // Weather tiles (OpenWeather)
 const WEATHER_TILE_URL = `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY`; //Please introduce your Open weather API Key
 
-
 // IDs for custom map types
 const MAPTYPE_IDS = {
   GERMANIC: "germanic_style",
@@ -146,6 +143,8 @@ export default function DrawMap() {
   const [heatPoints, setHeatPoints] =
     useState<google.maps.MVCArray<google.maps.visualization.WeightedLocation> | null>(null);
   const heatLayerRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
+
+  const heatSignatures = useHeatSignatures(); // ← lee progress del provider
 
   const clearHeatLayer = useCallback(() => {
     try {
@@ -233,12 +232,11 @@ export default function DrawMap() {
     });
   }, [isLoaded, setPolylines]);
 
-  // Build heat points whenever heatMode or routes change
+  // Build heat points whenever heatMode / routes / signatures cambian
   useEffect(() => {
-    if (!isLoaded || !heatMode) {
-      clearHeatLayer();
-      return;
-    }
+    if (!isLoaded) return;
+    if (!heatMode) { clearHeatLayer(); return; }
+
     if (!google.maps.geometry?.spherical || !google.maps.visualization?.HeatmapLayer) {
       console.warn("[heat] Required libraries missing (geometry/visualization).");
       clearHeatLayer();
@@ -252,26 +250,29 @@ export default function DrawMap() {
 
     const missing: string[] = [];
     for (const r of polylines) {
-      if (r.id && HEAT_SIGNATURES && !(r.id in HEAT_SIGNATURES)) missing.push(r.id);
+      if (r.id && heatSignatures && !(r.id in heatSignatures)) missing.push(r.id);
     }
     if (missing.length) {
       console.warn("[heat] Some route IDs lack signatures (defaulting to 1):", missing);
     }
 
-    const weighted = buildHeatDataFromRoutes(polylines, HEAT_SIGNATURES, 800);
+    const weighted = buildHeatDataFromRoutes(polylines, heatSignatures, 800);
     if (!weighted.length) {
       console.warn("[heat] buildHeatDataFromRoutes returned 0 points.");
       clearHeatLayer();
       return;
     }
 
-    const mvc = new google.maps.MVCArray<google.maps.visualization.WeightedLocation>(weighted);
-    setHeatPoints(mvc);
+    // ⬇️ reemplazamos el array anterior sin desmontar la capa
+    setHeatPoints((prev) => {
+      try { prev?.clear(); } catch {}
+      return new google.maps.MVCArray<google.maps.visualization.WeightedLocation>(weighted);
+    });
 
-    return () => clearHeatLayer();
-  }, [isLoaded, heatMode, polylines, clearHeatLayer]);
+    // ⛔️ Sin cleanup aquí: así no desmontamos la capa en cada tick
+  }, [isLoaded, heatMode, polylines, heatSignatures]); // ← importante: incluye heatSignatures
 
-  // Ensure native layer receives latest data/gradient/map
+  // Ensure native layer receives latest data/map (sin re-asignar gradient/radius cada tick)
   useEffect(() => {
     if (!heatMode) return;
     const m = mapRef.current;
@@ -279,9 +280,6 @@ export default function DrawMap() {
     if (m && layer && heatPoints) {
       try {
         layer.setData(heatPoints);
-        layer.set("gradient", SEA_ROUTE_GRADIENT);
-        layer.set("radius", 20);
-        layer.set("opacity", 0.9);
         if (!layer.getMap()) layer.setMap(m);
         const len = (heatPoints.getLength && heatPoints.getLength()) || 0;
         if (len === 0) console.warn("[heat] Layer received 0 points.");
@@ -422,11 +420,6 @@ export default function DrawMap() {
           }}
         />
 
-        {/*Little snippet to make fancier ports*/}
-
-        
-          
-
         {/* Ports */}
         {Object.entries(PORTS).map(([name, pos]) => (
           <Marker
@@ -436,8 +429,6 @@ export default function DrawMap() {
             label={name}
           />
         ))}
-
-
 
         {/* Routes (hidden in heat mode) */}
         {!heatMode &&
@@ -460,11 +451,11 @@ export default function DrawMap() {
         {/* Heat layer */}
         {canRenderHeat && (
           <HeatmapLayer
-            key={`routes-heatmap-${heatPoints?.getLength?.() ?? 0}`}
+            key="routes-heatmap"
             data={heatPoints!}
             options={{
               dissipating: true,
-              radius: 20,
+              radius: 35,         // ligeramente mayor para más presencia
               opacity: 0.8,
               gradient: SEA_ROUTE_GRADIENT,
             }}
@@ -474,7 +465,7 @@ export default function DrawMap() {
                 if (heatPoints) {
                   layer.setData(heatPoints);
                   layer.set("gradient", SEA_ROUTE_GRADIENT);
-                  layer.set("radius", 30);
+                  layer.set("radius", 35);
                   layer.set("opacity", 0.9);
                 }
                 if (mapRef.current) layer.setMap(mapRef.current);
