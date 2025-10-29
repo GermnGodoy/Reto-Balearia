@@ -1,66 +1,98 @@
 // lib/getData.ts
-/**
- * Llama a tu endpoint de Cloud Run /predict (el del script Python) y
- * devuelve únicamente el número pred_price del primer elemento de timeline.
- *
- * - Firma compatible: getData(date, origin, destination)
- * - 4º parámetro opcional para tunear payload y timeout.
- */
 
-type PredictOptions = {
-  codigo_buque?: string;          // obligatorio para el backend, default "SCA"
-  fecha_reserva?: string;         // YYYY-MM-DD (por defecto: hoy)
-  n_days?: number;                // default 1
-  tabla?: string;                 // default "balearia_dataset_nuevo.LIMPIO_SINCOS"
-  get_input?: boolean;            // default true
-  base_price?: number;            // default 50
-  min_price?: number;             // default 40
-  max_price?: number;             // default 60
-  capacity?: number;              // default 80
-  elasticity?: number;            // default 20
-  timeoutMs?: number;             // default 60000 (1 min)
+/** ================== tipos del API ================== **/
+
+export type PredictMetadata = {
+  codigo_buque: string;
+  destino: string;                 // "DD07"
+  fecha_inicio: string;            // "YYYY-MM-DD" (según backend)
+  fecha_salida: string;            // "YYYY-MM-DD"
+  n_days: number;
+  origen: string;                  // "OO04"
+  parametros: {
+    base_price: number;
+    capacity: number;
+    elasticity: number;
+    max_price: number;
+    min_price: number;
+  };
+  timestamp: string;               // ISO
 };
 
-type PredictAPIResponse = {
-  metadata?: Record<string, unknown>;
-  timeline?: Array<{
-    date?: string;
-    data?: { pred_price?: number; pred_demand?: number; [k: string]: unknown };
-    gauge?: Record<string, unknown>;
-    progress?: number;
-    reasoning?: Record<string, unknown>;
-    weights?: Record<string, unknown>;
-  }>;
-  // Para tolerar respuestas antiguas o alternativas:
-  data?: Array<{ predicted_price?: number }>;
+export type PredictSummaryItem = {
+  date: string;     // "DD-MM-YYYY"
+  demand: number;
+  price: number;
+  summary: string;
 };
 
-const API_URL = "https://predict-298899681831.europe-west1.run.app/predict";
+export type PredictReasoning = {
+  base_price?: number;
+  competitive_factor?: number;
+  dynamic_factor?: number;
+  elasticity?: number;
+  [k: string]: unknown;
+};
 
-// Para poder meter fechas como texto...
+export type ModelWeights = Record<string, number>;
+
+export type TimelineItem = {
+  data: { pred_demand: number; pred_price: number };
+  date: string; // "DD-MM-YYYY"
+  gauge?: { demand?: number; price?: number };
+  progress?: number;
+  reasoning?: PredictReasoning;
+  weights?: ModelWeights;
+};
+
+export type PredictAPIResponse = {
+  metadata: PredictMetadata;
+  summary?: Record<string, PredictSummaryItem>;
+  timeline: TimelineItem[];
+};
+
+/** ================== opciones de llamada ================== **/
+
+export type PredictOptions = {
+  codigo_buque?: string;
+  fecha_reserva?: string; // YYYY-MM-DD
+  n_days?: number;
+  tabla?: string;
+  get_input?: boolean;
+  base_price?: number;
+  min_price?: number;
+  max_price?: number;
+  capacity?: number;
+  elasticity?: number;
+  timeoutMs?: number;
+};
+
+const API_URL = process.env.NEXT_PUBLIC_PREDICT_API_URL || "https://predict-298899681831.europe-west1.run.app";
+
+/** ================== utilidades ================== **/
+
 function normalizeApiDate(input: string): string {
-  if (!input) throw new Error('Fecha vacía');
-
+  if (!input) throw new Error("Fecha vacía");
   const s = String(input).trim();
 
-  // 1) ISO con o sin hora → YYYY-MM-DD
+  // 1) YYYY-MM-DD (con o sin hora)
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
 
-  // 2) DATE(YYYY-MM-DD) o DATE(YYYY,MM,DD) (con espacios/guiones/comas)
+  // 2) DATE(YYYY-MM-DD) o DATE(YYYY,MM,DD)
   const dcon = s.match(/^DATE\(\s*(\d{4})\s*[-\/,]\s*(\d{1,2})\s*[-\/,]\s*(\d{1,2})\s*\)$/i);
   if (dcon) {
     const y = dcon[1];
-    const m = dcon[2].padStart(2, '0');
-    const d = dcon[3].padStart(2, '0');
+    const m = dcon[2].padStart(2, "0");
+    const d = dcon[3].padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
 
   // 3) DD/MM/YYYY o DD-MM-YYYY
   const dmy = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
   if (dmy) {
-    const d = dmy[1].padStart(2, '0');
-    const m = dmy[2].padStart(2, '0');
+    const d = dmy[1].padStart(2, "0");
+    const m = dmy[2].padStart(2, "0");
     const y = dmy[3];
     return `${y}-${m}-${d}`;
   }
@@ -69,134 +101,45 @@ function normalizeApiDate(input: string): string {
   const ymd = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
 
-  // 5) Último recurso: Date()
+  // 5) Fallback: Date()
   const dt = new Date(s);
   if (!Number.isNaN(dt.getTime())) {
     const y = dt.getUTCFullYear();
-    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(dt.getUTCDate()).padStart(2, '0');
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(dt.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
 
   throw new Error(`Formato de fecha no válido: "${input}"`);
 }
 
-
-function toIsoDate(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function toIsoDate(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
+function ensureNumber(n: any): number | null {
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+/** ================== FUNCIÓN PRINCIPAL ================== **/
+
 /**
- * @param date YYYY-MM-DD (fecha de servicio)
- * @param origin código origen esperado por el backend (p.ej. "OO04")
- * @param destination código destino esperado por el backend (p.ej. "DD07")
- * @param opts (opcional) para ajustar payload y timeout
- * @returns Promise<number> con el pred_price
+ * getData: ahora devuelve TODO el objeto de predicción:
+ *   - metadata
+ *   - summary (si viene)
+ *   - timeline completo (con pred_price, pred_demand, weights, reasoning, etc.)
  */
 export async function getData(
   date: string,
   origin: string,
   destination: string,
   opts: PredictOptions = {}
-): Promise<number> {
+): Promise<PredictAPIResponse> {
   if (!API_URL) {
-    throw new Error(
-      "Falta la variable de entorno NEXT_PUBLIC_PREDICT_API_URL (p.ej. https://.../predict)"
-    );
-  }
-
-  // Defaults sensatos
-  const now = new Date();
-  const payload = {
-    // OBLIGATORIAS
-    origen: origin.toUpperCase(),         // ej. "OO04"
-    destino: destination.toUpperCase(),   // ej. "DD07"
-    fecha_salida_base: normalizeApiDate(date),              // "YYYY-MM-DD" - 2025-01-26
-    codigo_buque: opts.codigo_buque,      // Trataría SCA
-
-    // OPCIONALES (alineadas con el script Python)
-    fecha_reserva: opts.fecha_reserva ?? toIsoDate(now),
-    n_days: opts.n_days ?? 1,
-    tabla: opts.tabla ?? "balearia_dataset_nuevo.LIMPIO_SINCOS",
-    get_input: opts.get_input ?? true,
-    base_price: opts.base_price ?? 50,
-    min_price: opts.min_price ?? 40,
-    max_price: opts.max_price ?? 60,
-    capacity: opts.capacity ?? 80,
-    elasticity: opts.elasticity ?? 20,
-  };
-
-  const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 60000;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`API ${res.status} ${res.statusText} :: ${text}`);
-    }
-
-    const json = (await res.json()) as PredictAPIResponse;
-
-    // 1) Forma nueva: timeline[0].data.pred_price
-    const predFromTimeline =
-      json?.timeline &&
-      Array.isArray(json.timeline) &&
-      json.timeline.length > 0 &&
-      typeof json.timeline[0]?.data?.pred_price === "number"
-        ? json.timeline[0]!.data!.pred_price!
-        : undefined;
-
-    if (typeof predFromTimeline === "number" && !Number.isNaN(predFromTimeline)) {
-      return predFromTimeline;
-    }
-
-    // 2) Forma antigua de tu stub: { data: [ { predicted_price } ] }
-    const fallback =
-      Array.isArray(json?.data) && json.data.length
-        ? json.data[0]?.predicted_price
-        : undefined;
-
-    if (typeof fallback === "number" && !Number.isNaN(fallback)) {
-      return fallback;
-    }
-
-    throw new Error(
-      "Respuesta sin 'timeline[0].data.pred_price' ni 'data[0].predicted_price'"
-    );
-  } catch (err) {
-    console.error("Error getData(/predict):", err);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-// ⬇️ tipos a añadir cerca de PredictOptions/PredictAPIResponse
-export type ModelWeights = Record<string, number>;
-export type PredictOut = { price: number | null; demand: number | null; weights: ModelWeights | null };
-
-// ⬇️ REPLACE getPrediction con esta versión que también saca weights
-export async function getPrediction(
-  date: string,
-  origin: string,
-  destination: string,
-  opts: PredictOptions = {}
-): Promise<PredictOut> {
-  if (!API_URL) {
-    throw new Error(
-      "Falta la variable de entorno NEXT_PUBLIC_PREDICT_API_URL (p.ej. https://.../predict)"
-    );
+    throw new Error("Falta NEXT_PUBLIC_PREDICT_API_URL en variables de entorno");
   }
 
   const now = new Date();
@@ -204,19 +147,20 @@ export async function getPrediction(
     origen: origin.toUpperCase(),
     destino: destination.toUpperCase(),
     fecha_salida_base: normalizeApiDate(date),
-    codigo_buque: opts.codigo_buque ?? "SCA",
-    fecha_reserva: opts.fecha_reserva ?? toIsoDate(now),
-    n_days: opts.n_days ?? 1,
+    codigo_buque: (opts.codigo_buque ?? "SCA").toUpperCase(),
+    fecha_reserva: opts.fecha_reserva ? normalizeApiDate(opts.fecha_reserva) : toIsoDate(now),
+    n_days: typeof opts.n_days === "number" ? opts.n_days : 7,
     tabla: opts.tabla ?? "balearia_dataset_nuevo.LIMPIO_SINCOS",
     get_input: opts.get_input ?? true,
-    base_price: opts.base_price ?? 50,
-    min_price: opts.min_price ?? 40,
-    max_price: opts.max_price ?? 60,
+    base_price: opts.base_price ?? 60,
+    min_price: opts.min_price ?? 20,
+    max_price: opts.max_price ?? 200,
     capacity: opts.capacity ?? 80,
     elasticity: opts.elasticity ?? 20,
   };
 
   const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 60000;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -228,39 +172,68 @@ export async function getPrediction(
       signal: controller.signal,
     });
 
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`API ${res.status} ${res.statusText} :: ${text}`);
+      throw new Error(`API ${res.status} :: ${text}`);
     }
 
-    const json = (await res.json()) as PredictAPIResponse;
-    const tl0 = Array.isArray(json?.timeline) && json.timeline.length ? json.timeline[0] : undefined;
-
-    const price =
-      typeof tl0?.data?.pred_price === "number" && !Number.isNaN(tl0.data.pred_price)
-        ? tl0.data.pred_price
-        : Array.isArray(json?.data) && typeof json.data[0]?.predicted_price === "number"
-        ? (json.data[0]!.predicted_price as number)
-        : null;
-
-    const demand =
-      typeof tl0?.data?.pred_demand === "number" && !Number.isNaN(tl0.data.pred_demand)
-        ? tl0.data.pred_demand
-        : null;
-
-    // weights del backend (timeline[0].weights)
-    let weights: ModelWeights | null = null;
-    if (tl0 && tl0.weights && typeof tl0.weights === "object") {
-      const entries = Object.entries(tl0.weights).filter(
-        ([, v]) => typeof v === "number" && Number.isFinite(v as number)
-      ) as Array<[string, number]>;
-      if (entries.length) {
-        weights = Object.fromEntries(entries);
-      }
+    // Parseo robusto
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error("Respuesta del backend no es JSON válido");
     }
 
-    return { price, demand, weights };
+    // Validación mínima de forma
+    if (!json || typeof json !== "object" || !json.metadata || !Array.isArray(json.timeline)) {
+      throw new Error("Formato inesperado de respuesta (faltan metadata/timeline)");
+    }
+
+    // Coerciones suaves
+    const cleanTimeline: TimelineItem[] = json.timeline.map((t: any) => ({
+      data: {
+        pred_demand: ensureNumber(t?.data?.pred_demand) ?? 0,
+        pred_price: ensureNumber(t?.data?.pred_price) ?? 0,
+      },
+      date: String(t?.date ?? ""),
+      gauge: t?.gauge ?? undefined,
+      progress: typeof t?.progress === "number" ? t.progress : undefined,
+      reasoning: t?.reasoning ?? undefined,
+      weights: t?.weights ?? undefined,
+    }));
+
+    const result: PredictAPIResponse = {
+      metadata: json.metadata as PredictMetadata,
+      summary: json.summary ?? undefined,
+      timeline: cleanTimeline,
+    };
+
+    return result;
+  } catch (err) {
+    throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** ================== helpers de compatibilidad ================== **/
+
+/**
+ * Devuelve { price, demand, weights } del primer elemento del timeline.
+ * Útil cuando solo necesitas alimentar gauges/SHAP rápido.
+ */
+export async function getPredictedNumbers(
+  date: string,
+  origin: string,
+  destination: string,
+  opts: PredictOptions = {}
+): Promise<{ price: number | null; demand: number | null; weights: ModelWeights | null }> {
+  const full = await getData(date, origin, destination, opts);
+  const first = full.timeline?.[0];
+
+  const price = ensureNumber(first?.data?.pred_price);
+  const demand = ensureNumber(first?.data?.pred_demand);
+  const weights = (first?.weights && typeof first.weights === "object") ? (first.weights as ModelWeights) : null;
+  return { price, demand, weights };
 }

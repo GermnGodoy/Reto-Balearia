@@ -1,45 +1,48 @@
-"use client"
+// src/contexts/travelsContext.tsx
+"use client";
 
-import React, { createContext, useContext, ReactNode } from "react"
-import travelsDataJson from "@/data/travels.json"
+import React, { createContext, useContext, ReactNode } from "react";
+import travelsDataJson from "@/data/travels.json";
 
-type TimelineEntry = {
-  progress: number
-  isActive: boolean
-  profit: number
-  people: number
-  predictedProfit: number
-  profitError: number
-  predictedPeople: number
-  peopleError: number
-}
+export type TimelineEntry = {
+  progress: number;
+  isActive: boolean;
+  profit: number;
+  people: number;
+  predictedProfit: number;
+  profitError: number;
+  predictedPeople: number;
+  peopleError: number;
+};
 
-type Travel = {
-  name: string
-  description: string
-  timeline: TimelineEntry[]
-}
+export type Travel = {
+  name: string;
+  description: string;
+  timeline: TimelineEntry[];
+};
 
 type TravelsContextType = {
-  travels: Travel[]
-}
+  travels: Travel[];
+};
 
-const TravelsContext = createContext<TravelsContextType | undefined>(undefined)
+const TravelsContext = createContext<TravelsContextType | undefined>(undefined);
 
-export function TravelsProvider({ children }: { children: ReactNode }) {
-  const travels = travelsDataJson as Travel[]
-
-  return (
-    <TravelsContext.Provider value={{ travels }}>
-      {children}
-    </TravelsContext.Provider>
-  )
+// 👇 NUEVO: `travels` es opcional. Si lo pasas, se usa; si no, cae a travels.json
+export function TravelsProvider({
+  children,
+  travels: travelsOverride,
+}: {
+  children: ReactNode;
+  travels?: Travel[];
+}) {
+  const travels = (travelsOverride ?? (travelsDataJson as Travel[])) as Travel[];
+  return <TravelsContext.Provider value={{ travels }}>{children}</TravelsContext.Provider>;
 }
 
 export function useTravels() {
-  const context = useContext(TravelsContext)
+  const context = useContext(TravelsContext);
   if (context === undefined) {
-    throw new Error("useTravels must be used within a TravelsProvider")
+    throw new Error("useTravels must be used within a TravelsProvider");
   }
-  return context
+  return context;
 }

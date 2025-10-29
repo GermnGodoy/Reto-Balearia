@@ -1,9 +1,29 @@
+// hooks/useTravelStats.ts
 import { useMemo } from 'react'
 import { useTravels } from '@/contexts/travelsContext'
 import { gaugeColor as getGaugeColor, getTrendColor } from '@/functions/colors'
 
-export function useTravelStats(progress: number) {
-  const { travels: travelsData } = useTravels()
+// 👇 Añade estos tipos si no los tienes exportados del contexto
+type TimelineEntry = {
+  progress: number
+  isActive: boolean
+  profit: number
+  people: number
+  predictedProfit: number
+  profitError: number
+  predictedPeople: number
+  peopleError: number
+}
+type Travel = {
+  name: string
+  description: string
+  timeline: TimelineEntry[]
+}
+
+// 👇 ÚNICO CAMBIO de API: travelsOverride opcional
+export function useTravelStats(progress: number, travelsOverride?: Travel[]) {
+  const { travels: travelsDataFromContext } = useTravels()
+  const travelsData = travelsOverride ?? travelsDataFromContext
 
   const currentMeanData = useMemo(() => {
     const roundedProgress = Math.round(progress)
@@ -54,28 +74,11 @@ export function useTravelStats(progress: number) {
     return { minRatio: min, maxRatio: max }
   }, [travelsData])
 
-  // Map ratio to gauge percentage (15% to 90%)
   const gaugePercentage = useMemo(() => {
     if (currentMeanData.ratio === 0) return 15
-
-    // Handle edge case where min === max
-    if (maxRatio === minRatio) {
-      return 52.5 // Middle value if all ratios are the same
-    }
-
+    if (maxRatio === minRatio) return 52.5
     const normalized = (currentMeanData.ratio - minRatio) / (maxRatio - minRatio)
-    const percentage = 15 + (normalized * 75) // Maps to 15-90%
-
-    // Debug logging
-    console.log('Gauge Debug:', {
-      currentRatio: currentMeanData.ratio,
-      minRatio,
-      maxRatio,
-      normalized,
-      percentage
-    })
-
-    return percentage
+    return 15 + (normalized * 75)
   }, [currentMeanData.ratio, minRatio, maxRatio])
 
   const historicalData = useMemo(() => {
@@ -92,14 +95,14 @@ export function useTravelStats(progress: number) {
       let totalPeopleError = 0
 
       travelsData.forEach(travel => {
-        const timelineData = travel.timeline.find(t => t.progress === i)
-        if (timelineData) {
-          totalProfit += timelineData.profit
-          totalPeople += timelineData.people
-          totalPredictedProfit += timelineData.predictedProfit
-          totalPredictedPeople += timelineData.predictedPeople
-          totalProfitError += Math.abs(timelineData.profitError)
-          totalPeopleError += Math.abs(timelineData.peopleError)
+        const t = travel.timeline.find(x => x.progress === i)
+        if (t) {
+          totalProfit += t.profit
+          totalPeople += t.people
+          totalPredictedProfit += t.predictedProfit
+          totalPredictedPeople += t.predictedPeople
+          totalProfitError += Math.abs(t.profitError)
+          totalPeopleError += Math.abs(t.peopleError)
         }
       })
 
@@ -117,40 +120,31 @@ export function useTravelStats(progress: number) {
     return data
   }, [progress, travelsData])
 
-  // Calculate gauge color
   const gaugeColor = useMemo(() => getGaugeColor(gaugePercentage), [gaugePercentage])
 
-  // Calculate trends
   const trends = useMemo(() => {
     if (historicalData.length < 2) {
       return {
         profit: { percentChange: 0, color: "hsl(142.1 76.2% 36.3%)" },
         people: { percentChange: 0, color: "hsl(142.1 76.2% 36.3%)" },
-        ratio: { percentChange: 0, color: "hsl(142.1 76.2% 36.3%)" }
+        ratio:  { percentChange: 0, color: "hsl(142.1 76.2% 36.3%)" }
       }
     }
 
-    const firstData = historicalData[0]
-    const lastData = historicalData[historicalData.length - 1]
+    const first = historicalData[0]
+    const last = historicalData[historicalData.length - 1]
 
-    const profitChange = firstData.profit > 0
-      ? ((lastData.profit - firstData.profit) / firstData.profit) * 100
-      : 0
+    const profitChange = first.profit > 0 ? ((last.profit - first.profit) / first.profit) * 100 : 0
+    const peopleChange = first.people > 0 ? ((last.people - first.people) / first.people) * 100 : 0
 
-    const peopleChange = firstData.people > 0
-      ? ((lastData.people - firstData.people) / firstData.people) * 100
-      : 0
-
-    const firstRatio = firstData.people > 0 ? firstData.profit / firstData.people : 0
-    const lastRatio = lastData.people > 0 ? lastData.profit / lastData.people : 0
-    const ratioChange = firstRatio > 0
-      ? ((lastRatio - firstRatio) / firstRatio) * 100
-      : 0
+    const firstRatio = first.people > 0 ? first.profit / first.people : 0
+    const lastRatio  = last.people  > 0 ? last.profit  / last.people  : 0
+    const ratioChange = firstRatio > 0 ? ((lastRatio - firstRatio) / firstRatio) * 100 : 0
 
     return {
       profit: { percentChange: profitChange, color: getTrendColor(profitChange) },
       people: { percentChange: peopleChange, color: getTrendColor(peopleChange) },
-      ratio: { percentChange: ratioChange, color: getTrendColor(ratioChange) }
+      ratio:  { percentChange: ratioChange,  color: getTrendColor(ratioChange)  }
     }
   }, [historicalData])
 

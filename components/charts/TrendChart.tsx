@@ -21,7 +21,7 @@ export function TrendChart({
   predictedDataKey,
   errorDataKey,
   actualColor,
-  predictedColor = "white",
+  predictedColor = "black",
   label,
   xAxisKey = "progress",
   className = "h-[250px] w-full"
