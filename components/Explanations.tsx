@@ -15,15 +15,37 @@ import {
 import { getPast15DaysTravels, getPast15DaysWeights } from "@/functions/db";
 import { useTravels } from "@/contexts/travelsContext";
 import { useProgress } from "@/contexts/ProgressContext";
-
 import { Children } from "react";
-//Little helper from gpt
+
+/** ========= NEW: tipos para inyectar la predicción ========= */
+export type PredictionProps = {
+  price: number | null;
+  demand: number | null;
+  /** pesos: {feature: weight} tal cual devuelve timeline[0].weights */
+  weights?: Record<string, number> | null;
+  meta?: {
+    origin?: string;            // ej. OO04
+    destination?: string;       // ej. DD07
+    originLabel?: string;       // ej. València
+    destinationLabel?: string;  // ej. Mallorca
+    date?: string;              // YYYY-MM-DD
+    codigo_buque?: string;      // ej. SCA
+    params?: {
+      base_price?: number;
+      min_price?: number;
+      max_price?: number;
+      capacity?: number;
+      elasticity?: number;
+    };
+  };
+} | undefined;
+
+/** ========= helpers ========= */
 const textFrom = (node: React.ReactNode) =>
   Children.toArray(node)
     .map((c) => (typeof c === "string" || typeof c === "number" ? String(c) : ""))
     .join("")
     .trim();
-
 
 function safeStringify(obj: any, limit = 6000) {
   try {
@@ -36,7 +58,6 @@ function safeStringify(obj: any, limit = 6000) {
 
 /** --- MarkdownRenderer: adds icons & styling --- */
 function MarkdownRenderer({ markdown }: { markdown: string }) {
-  // Map section titles → icons
   const iconForHeading = (text: string) => {
     const t = text.toLowerCase();
     if (t.includes("hallazgos clave")) return <Lightbulb className="h-4 w-4" />;
@@ -52,7 +73,7 @@ function MarkdownRenderer({ markdown }: { markdown: string }) {
         remarkPlugins={[remarkGfm]}
         components={{
           h2: ({ children }) => {
-            const text = textFrom(children).toLowerCase(); // <- simple + robust enough
+            const text = textFrom(children).toLowerCase();
             return (
               <h2 className="mt-4 mb-2 flex items-center gap-2 text-lg font-semibold">
                 {iconForHeading(text)}
@@ -60,7 +81,7 @@ function MarkdownRenderer({ markdown }: { markdown: string }) {
               </h2>
             );
           },
-            h3: ({ children }) => (
+          h3: ({ children }) => (
             <h3 className="mt-3 mb-1 text-base font-semibold">{children}</h3>
           ),
           strong: ({ children }) => (
@@ -74,21 +95,16 @@ function MarkdownRenderer({ markdown }: { markdown: string }) {
           li: ({ children }) => (
             <li className="flex gap-2">
               <CircleDot className="h-4 w-4 mt-1.5 flex-shrink-0" />
-              {/* Remove default <p> margin inside list items */}
               <div className="[&>p]:m-0">{children}</div>
             </li>
           ),
           table: ({ children }) => (
             <div className="my-3 overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
-              <table className="min-w-[560px] w-full border-collapse">
-                {children}
-              </table>
+              <table className="min-w-[560px] w-full border-collapse">{children}</table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-neutral-100/70 dark:bg-neutral-800/60">
-              {children}
-            </thead>
+            <thead className="bg-neutral-100/70 dark:bg-neutral-800/60">{children}</thead>
           ),
           th: ({ children }) => (
             <th className="px-3 py-2 text-left text-sm font-semibold border-b border-neutral-200 dark:border-neutral-700">
@@ -100,9 +116,7 @@ function MarkdownRenderer({ markdown }: { markdown: string }) {
               {children}
             </td>
           ),
-          p: ({ children }) => (
-            <p className="my-2 text-[0.975rem]">{children}</p>
-          ),
+          p: ({ children }) => <p className="my-2 text-[0.975rem]">{children}</p>,
         }}
       >
         {markdown}
@@ -111,8 +125,10 @@ function MarkdownRenderer({ markdown }: { markdown: string }) {
   );
 }
 
-/** --- Your original component, now using MarkdownRenderer --- */
-export default function Explanations() {
+/** --- COMPONENTE --- 
+ * Ahora acepta props opcionales con la predicción en vivo.
+ */
+export default function Explanations({ prediction }: { prediction?: PredictionProps }) {
   const { travels } = useTravels();
   const { progress } = useProgress();
 
@@ -129,39 +145,52 @@ export default function Explanations() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-const systemPrompt = `
-Eres un analista senior de redes de ferris. Escribe en español de España, claro y accionable.
-Usa el contexto para dar recomendaciones y DEVUELVE SIEMPRE MARKDOWN con esta estructura:
-
+  /** ======== PROMPTS (ajustados para usar la predicción si existe) ======== */
+  const systemPrompt = `
+Eres BALEITO, analista senior de redes de ferris. Escribe en español (España), claro y accionable.
+Si te doy precio, demanda y pesos PREDICHOS, ÚSALOS como fuente principal.
+Reglas:
+- No inventes datos; usa solo el contexto.
+- Cita unidades (€, pax, %).
+- Prioriza los 3–4 factores con mayor peso (del objeto "weights").
+- Cierra con 1 recomendación operativa coherente con min/max si están en el contexto.
+Output: Markdown con estas secciones:
 ## Hallazgos clave
-- **Titular en negrita (≤6 palabras)**. 1–2 frases explicativas.
-- **Otro titular**. 1–2 frases.
-- **Otro titular**. 1–2 frases.
-
 ## Acciones priorizadas (RICE)
-| **Acción** | **Impacto (1–5)** | **Confianza (0–1)** | **Esfuerzo (1–5)** | **RICE (I*C/E)** |
-| --- | ---: | ---: | ---: | ---: |
-| Ajustar horarios en ruta X | 4 | 0.7 | 2 | 1.40 |
-| … | … | … | … | … |
-
 ## Riesgos y mitigaciones
-- **Riesgo**: descripción breve. **Mitigación**: acción concreta.
-- **Riesgo**: … **Mitigación**: …
-
 ## KPIs a vigilar (próximas 2 semanas)
-- **Ocupación media**, **Ingresos por salida**, **No-show**, **Puntualidad**, **Meteo crítica**.
-
-No saludos ni preámbulos; SOLO el contenido. Usa negritas en los títulos de viñetas. 
 `.trim();
 
-
   function buildUserMessage() {
+    // Compactamos solo lo útil; la predicción manda si está presente
+    const predBlock = prediction
+      ? {
+          predicted: {
+            price: prediction.price,
+            demand: prediction.demand,
+            weights: prediction.weights ?? null,
+          },
+          meta: prediction.meta ?? null,
+        }
+      : null;
+
     const context = {
+      predBlock, // ← si existe, la IA debe usarlo como fuente principal
       past15DaysTravels,
       past15DaysWeights,
       meta: { note: "Datos resumidos de los últimos 15 días" },
     };
-    return `CONTEXT JSON (compacto):\n${safeStringify(context)}\n\nGenera las recomendaciones siguiendo estrictamente el formato pedido.`;
+
+    // Instrucción explícita
+    const task = `
+Tarea:
+1) Si "predBlock" existe, resume en 1 frase el resultado del modelo (precio y demanda) y úsalo como base del análisis.
+2) Explica por qué, ordenando factores por peso descendente (del objeto weights si existe).
+3) Menciona riesgos/incertidumbres si aplican (p.ej., demanda cercana a capacidad).
+4) Da 1 recomendación operativa concreta (subir/bajar/mantener precio), respetando límites si están definidos en meta.params.
+`.trim();
+
+    return `CONTEXT JSON (compacto):\n${safeStringify(context)}\n\n${task}\n\nDevuelve SOLO el Markdown en el formato requerido.`;
   }
 
   async function generate() {
@@ -187,10 +216,11 @@ No saludos ni preámbulos; SOLO el contenido. Usa negritas en los títulos de vi
     }
   }
 
+  // Vuelve a generar si cambian la predicción o los datos base
   useEffect(() => {
     generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [past15DaysTravels, past15DaysWeights]);
+  }, [prediction?.price, prediction?.demand, JSON.stringify(prediction?.weights), past15DaysTravels, past15DaysWeights]);
 
   return (
     <div className="mt-10 mb-7">
@@ -202,9 +232,7 @@ No saludos ni preámbulos; SOLO el contenido. Usa negritas en los títulos de vi
 
           <div className="flex-1">
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-base font-semibold text-black dark:text-white">
-                Estrategia
-              </h4>
+              <h4 className="text-base font-semibold text-black dark:text-white">Estrategia</h4>
               <button
                 onClick={generate}
                 disabled={loading}
@@ -223,8 +251,8 @@ No saludos ni preámbulos; SOLO el contenido. Usa negritas en los títulos de vi
             ) : (
               <p className="text-base text-neutral-700 dark:text-neutral-200 leading-relaxed">
                 {loading
-                  ? "Generando recomendaciones con Gemini…"
-                  : "Estas recomendaciones se basan en los últimos 15 días de datos. Pulsa “Regenerar” para actualizar."}
+                  ? "Generando recomendaciones…"
+                  : "Estas recomendaciones se basan en la predicción y en los últimos 15 días. Pulsa “Regenerar” para actualizar."}
               </p>
             )}
           </div>
