@@ -1,5 +1,7 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { DollarSign, Users, Download, FileText } from "lucide-react";
@@ -29,6 +31,8 @@ import { Button } from "@/components/ui/button";
 // ⬇️ helper que ya devuelve precio, demanda y weights
 import { getData, type ModelWeights, type TimelineItem } from "@/lib/getData";
 import type { Travel, TimelineEntry } from "@/contexts/travelsContext";
+
+
 
 // ─────────────────── Utilidades ───────────────────
 const toTitle = (s: string) =>
@@ -129,15 +133,38 @@ const weightsToGraphPercent = (w: ModelWeights) => {
 // ─────────────────── Componente ───────────────────
 export default function StatsTab() {
   const { progress } = useProgress();
+  
+  // Leer parámetros de la URL
+  const searchParams = useSearchParams();
 
   // Progress 0-9 → idx 0, 10-19 → idx 1, ... 90-100 → idx 9
   const currentDataIndex = Math.min(Math.floor(progress / 10), 9);
 
-  // Selectores
-  const [selectedDate, setSelectedDate] = useState<string>(DEFAULTS.date);
-  const [shipCode, setShipCode] = useState<string>(DEFAULTS.shipCode);
-  const [originKey, setOriginKey] = useState<AggKey>(DEFAULTS.originKey);
-  const [destinationKey, setDestinationKey] = useState<AggKey>(DEFAULTS.destinationKey);
+  // Selectores con valores de URL o defaults
+  const [selectedDate, setSelectedDate] = useState<string>(
+    searchParams.get('date') || DEFAULTS.date
+  );
+  const [shipCode, setShipCode] = useState<string>(
+    searchParams.get('ship') || DEFAULTS.shipCode
+  );
+  const [originKey, setOriginKey] = useState<AggKey>(
+    (searchParams.get('origin') as AggKey) || DEFAULTS.originKey
+  );
+  const [destinationKey, setDestinationKey] = useState<AggKey>(
+    (searchParams.get('destination') as AggKey) || DEFAULTS.destinationKey
+  );
+
+  useEffect(() => {
+    const nextDate = searchParams.get("date") || DEFAULTS.date;
+    const nextShip = searchParams.get("ship") || DEFAULTS.shipCode;
+    const nextOrigin = (searchParams.get("origin") as AggKey) || DEFAULTS.originKey;
+    const nextDestination = (searchParams.get("destination") as AggKey) || DEFAULTS.destinationKey;
+
+    setSelectedDate((prev) => (prev === nextDate ? prev : nextDate));
+    setShipCode((prev) => (prev === nextShip ? prev : nextShip));
+    setOriginKey((prev) => (prev === nextOrigin ? prev : nextOrigin));
+    setDestinationKey((prev) => (prev === nextDestination ? prev : nextDestination));
+  }, [searchParams]);
 
   // Estado de predicción
   const [predPrice, setPredPrice] = useState<number | null>(null);
