@@ -2,15 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+// ⬇️ Importa tu fetch de predicción completo
+import { getData, type PredictAPIResponse } from "@/lib/getData";
 
 type Msg = { role: "user" | "assistant"; content: string };
+
+// Defaults de contexto Baleito para el prompt
+const DEFAULT_CONTEXT = {
+  date: "2023-01-26",
+  origin: "OO04",
+  destination: "DD07",
+  codigo_buque: "SCA",
+  n_days: 7,
+};
+
+function safeStringify(obj: any, limit = 5500) {
+  try {
+    const s = JSON.stringify(obj);
+    return s.length > limit ? s.slice(0, limit) + " …(truncado)" : s;
+  } catch {
+    return "[no serializable]";
+  }
+}
 
 export default function ChatbotLauncher() {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
       content:
-        "Hi! I’m your Gemini-powered assistant. Ask me about your map, stats, or travels.",
+        "Hola! Soy Baleito, tu intérprete de datos. ¿Tienes alguna pregunta para mí?.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -30,6 +50,42 @@ export default function ChatbotLauncher() {
     }
   }, [open, messages, loading]);
 
+  const buildSystemPrompt = (predict?: PredictAPIResponse, payloadUsed?: Record<string, unknown>) => {
+    const base =
+      "You are a helpful, concise assistant for a logistics + travel analytics app. Use short, actionable answers.";
+
+    if (!predict || !payloadUsed) return base;
+
+    // Compactamos el contexto: metadata + primer punto del timeline + claves del summary
+    const first = Array.isArray(predict.timeline) && predict.timeline.length ? predict.timeline[0] : null;
+    const compact = {
+      payload_used: payloadUsed, // lo que se envió a Cloud Run
+      metadata: predict.metadata,
+      summary_keys: predict.summary ? Object.keys(predict.summary) : [],
+      first_timeline_item: first
+        ? {
+            date: first.date,
+            pred_price: first.data?.pred_price,
+            pred_demand: first.data?.pred_demand,
+            weights: first.weights ?? null,
+            reasoning: first.reasoning ?? null,
+            progress: first.progress ?? null,
+          }
+        : null,
+    };
+
+    return (
+      base +
+      "\n\n" +
+      "### LIVE_PREDICT_CONTEXT (read-only JSON)\n" +
+      safeStringify(compact) +
+      "\n\n" +
+      "Rules:\n" +
+      "- When the user asks about pricing/demand/weights/timeline, use this context.\n" +
+      "- If irrelevant, answer normally. Keep responses concise and practical."
+    );
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = input.trim();
@@ -43,12 +99,44 @@ export default function ChatbotLauncher() {
     try {
       const convo = [...messagesRef.current, userMsg];
 
+      // ⬇️ Llamada a Baleito (Cloud Run) con los payloads de getData
+      let predict: PredictAPIResponse | undefined = undefined;
+      let payloadUsed: Record<string, unknown> | undefined = undefined;
+      try {
+        predict = await getData(
+          DEFAULT_CONTEXT.date,
+          DEFAULT_CONTEXT.origin,
+          DEFAULT_CONTEXT.destination,
+          {
+            codigo_buque: DEFAULT_CONTEXT.codigo_buque,
+            n_days: DEFAULT_CONTEXT.n_days,
+            get_input: true,
+          }
+        );
+
+        // reconstruimos el payload que usamos (tal y como lo espera el backend)
+        payloadUsed = {
+          origen: DEFAULT_CONTEXT.origin,
+          destino: DEFAULT_CONTEXT.destination,
+          fecha_salida_base: DEFAULT_CONTEXT.date,
+          codigo_buque: DEFAULT_CONTEXT.codigo_buque,
+          n_days: DEFAULT_CONTEXT.n_days,
+          get_input: true,
+          // Nota: el resto (tabla, base/min/max/capacity/elasticity, fecha_reserva) se completan por defecto en getData
+        };
+      } catch {
+        // Si falla la predicción, seguimos sin contexto vivo
+        predict = undefined;
+        payloadUsed = undefined;
+      }
+
+      const systemPrompt = buildSystemPrompt(predict, payloadUsed);
+
       const res = await fetch("/api/gemini-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          systemPrompt:
-            "You are a helpful, concise assistant for a logistics + travel analytics app. Use short, actionable answers.",
+          systemPrompt,
           messages: convo,
         }),
       });
@@ -82,6 +170,7 @@ export default function ChatbotLauncher() {
       setLoading(false);
     }
   };
+
   //TODO: Change the text "open chat" with the icon given and change background to white
   return (
     <>
@@ -89,7 +178,6 @@ export default function ChatbotLauncher() {
         <button
           onClick={() => setOpen(true)}
           aria-expanded={open}
-          
           className="fixed bottom-4 right-4 z-50 p-0 rounded-full hover:shadow-[0_14px_48px_rgba(0,0,0,0.45)] shadow-lg border bg-white from-black to-neutral-700 text-white dark:from-white dark:to-neutral-200 dark:text-black px-4 py-3 text-sm hover:opacity-90"
         >
           <Image
@@ -102,7 +190,7 @@ export default function ChatbotLauncher() {
           />
         </button>
       )}
-        {/*TO Do: change upper buton with logo*/ }
+
       {/* Rounded floating drawer without blocking backdrop */}
       <div
         className={`fixed right-2 md:right-4 top-2 md:top-4 bottom-2 md:bottom-4 z-50
@@ -125,10 +213,7 @@ export default function ChatbotLauncher() {
           </button>
         </div>
 
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
-        >
+        <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {messages.map((m, i) => (
             <div
               key={i}
@@ -150,10 +235,7 @@ export default function ChatbotLauncher() {
           )}
         </div>
 
-        <form
-          onSubmit={sendMessage}
-          className="border-t border-neutral-200/80 dark:border-neutral-800/80 p-3 rounded-b-3xl"
-        >
+        <form onSubmit={sendMessage} className="border-t border-neutral-200/80 dark:border-neutral-800/80 p-3 rounded-b-3xl">
           <div className="flex gap-2">
             <input
               className="flex-1 rounded-full border border-neutral-300 dark:border-neutral-700 bg-white/90 dark:bg-neutral-950/90 px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"

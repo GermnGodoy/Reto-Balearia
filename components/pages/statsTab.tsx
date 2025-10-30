@@ -6,8 +6,7 @@ import { DollarSign, Users, RefreshCw } from "lucide-react";
 import { useProgress } from "@/contexts/ProgressContext";
 import { TrendChart } from "@/components/charts/TrendChart";
 import Gauge from "@/components/ui/gauge";
-import { SHAPChart } from "@/components/charts/SHAPChart";
-import modelWeightsData from "@/data/model-weights.json";
+import { SHAPChart, type SHAPData } from "@/components/charts/SHAPChart";
 import InsightCards from "../ui/insightCards";
 import {
   CollapsibleCard,
@@ -18,31 +17,12 @@ import {
 } from "../ui/collapsible-card";
 import Explanations from "../Explanations";
 import { Button } from "../ui/button";
-import { useTravelStats } from "@/hooks/useTravelStats";
 
-// ⬇️ usamos tu helper que ya devuelve precio, demanda y weights
+// ⬇️ helper API completo
 import { getData, type ModelWeights, type TimelineItem } from "@/lib/getData";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { ComposedChart, Line, XAxis, YAxis, ReferenceLine } from "recharts";
 
-import type { Travel, TimelineEntry } from "@/contexts/travelsContext";
-
-// ─────────────────── Utilidades ───────────────────
 type Mode = "DEPARTURES" | "ARRIVALS";
 
-// Título con capitalización amable
-const toTitle = (s: string) =>
-  s
-    .toUpperCase()
-    .split(/\s+/)
-    .map((w) =>
-      ["DE", "DEL", "LA", "EL", "LOS", "LAS", "Y"].includes(w)
-        ? w.toLowerCase()
-        : w[0] + w.slice(1).toLowerCase()
-    )
-    .join(" ");
-
-// ─────────────────── Localizaciones agregadas → códigos ───────────────────
 type AggKey =
   | "BARCELONA"
   | "VALÈNCIA"
@@ -53,13 +33,13 @@ type AggKey =
   | "MENORCA";
 
 const LOCATIONS: Record<AggKey, { label: string; origin: string; destination: string }> = {
-  BARCELONA:  { label: "Barcelona",  origin: "OO01", destination: "DD09" },
-  "VALÈNCIA": { label: "València",   origin: "OO04", destination: "DD06" },
-  "DÉNIA":    { label: "Dénia",      origin: "OO06", destination: "DD08" },
-  IBIZA:      { label: "Ibiza",      origin: "OO05", destination: "DD07" }, // Eivissa/Botafoc
+  BARCELONA: { label: "Barcelona", origin: "OO01", destination: "DD09" },
+  "VALÈNCIA": { label: "València", origin: "OO04", destination: "DD06" },
+  "DÉNIA": { label: "Dénia", origin: "OO06", destination: "DD08" },
+  IBIZA: { label: "Ibiza", origin: "OO05", destination: "DD07" },
   FORMENTERA: { label: "Formentera", origin: "OO11", destination: "DD13" },
-  MALLORCA:   { label: "Mallorca",   origin: "OO07", destination: "DD01" }, // Palma
-  MENORCA:    { label: "Menorca",    origin: "OO10", destination: "DD12" }, // Maó
+  MALLORCA: { label: "Mallorca", origin: "OO07", destination: "DD01" },
+  MENORCA: { label: "Menorca", origin: "OO10", destination: "DD12" },
 };
 
 const LOCATION_ORDER: AggKey[] = [
@@ -72,7 +52,6 @@ const LOCATION_ORDER: AggKey[] = [
   "MENORCA",
 ];
 
-// ─────────────────── Parámetros por defecto ───────────────────
 const DEFAULTS = {
   date: "2023-01-26",
   shipCode: "SCA",
@@ -86,186 +65,91 @@ const DEFAULTS = {
   destinationKey: "IBIZA" as AggKey,
 };
 
+/* ───────────────────────────── SHAP helpers ───────────────────────────── */
 
-// ─────────────────── Componente ───────────────────
+const FEATURE_LABELS: Record<string, string> = {
+  capacity: "Capacidad",
+  competition: "Competencia",
+  events: "Eventos",
+  lead_time: "Ventana de reserva",
+  other: "Otros",
+  weather: "Meteo",
+};
+
+/**
+ * Convierte los `weights` de la API (magnitudes) en un SHAPData {nodes,links}.
+ * - Normaliza por la suma de pesos (por si no suma 1).
+ * - Escala por la predicción (demanda) para que la magnitud sea informativa.
+ * - Ojo: los pesos actuales NO traen signo; el SHAPChart alterna signos visualmente.
+ */
+function buildShapFromApi(
+  weights: ModelWeights | null,
+  predicted: number | null,
+  label = "Predicción (demanda)",
+  normalize = true
+): SHAPData {
+  if (!weights || predicted == null || !Number.isFinite(predicted)) {
+    return { nodes: [], links: [] };
+  }
+
+  const entries = Object.entries(weights)
+    .map(([k, v]) => ({ name: FEATURE_LABELS[k] ?? k, value: Number(v) }))
+    .filter(e => Number.isFinite(e.value));
+
+  let total = normalize ? entries.reduce((s, e) => s + Math.abs(e.value), 0) : 1;
+  if (!total || !Number.isFinite(total)) total = 1;
+
+  const nodes = [...entries.map(e => ({ name: e.name })), { name: label }];
+  const target = nodes.length - 1;
+
+  const links = entries.map((e, idx) => ({
+    source: idx,
+    target,
+    value: (Math.abs(e.value) / total) * Math.abs(predicted),
+  }));
+
+  return { nodes, links };
+}
+
+/* -------------------- Tipos de parámetros de API -----------------*/
+
+type ApiReasoning = Partial<{
+  base_price: number;
+  elasticity: number;
+  dynamic_factor: number;
+  competitive_factor: number;
+}>;
+type ApiParams = Partial<{
+  min_price: number;
+  max_price: number;
+  base_price: number;
+  capacity: number;
+  elasticity: number;
+}>;
+
+/* ───────────────────────────── Componente ───────────────────────────── */
+
 export default function StatsTab() {
-
-  
-
   const { progress } = useProgress();
 
-
-  // Selecciones controladas (fecha, buque, origen/destino agregados)
+  // Selectores
   const [selectedDate, setSelectedDate] = useState<string>(DEFAULTS.date);
   const [shipCode, setShipCode] = useState<string>(DEFAULTS.shipCode);
   const [originKey, setOriginKey] = useState<AggKey>(DEFAULTS.originKey);
   const [destinationKey, setDestinationKey] = useState<AggKey>(DEFAULTS.destinationKey);
-
-  // Modo UI (no afecta a la llamada, puedes quitarlo si quieres)
   const [mode, setMode] = useState<Mode>("DEPARTURES");
 
-  // ── Estado de predicción ──
+  // Estado API
   const [predPrice, setPredPrice] = useState<number | null>(null);
   const [predDemand, setPredDemand] = useState<number | null>(null);
   const [apiWeights, setApiWeights] = useState<ModelWeights | null>(null);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [apiReasoning, setApiReasoning] = useState<ApiReasoning | null>(null); // ← DENTRO del componente
+  const [apiParams, setApiParams] = useState<ApiParams | null>(null);           // ← DENTRO del componente
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
 
-  // Adaptador API → travels.json para useTravelStats (sin normalizar progress)
-// - Solo incluimos progress ≤ 100 (lo >100 es futuro y no afecta al hook)
-// - Si faltan puntos en la ventana [progress-9, progress], rellenamos
-//   clonando el último valor disponible ≤ i (LOCF) para que el gráfico se actualice.
-const apiTravels: Travel[] | undefined = useMemo(() => {
-  if (!timeline?.length) return undefined;
-
-  // 1) Mapeo base con progress tal cual (sin normalizar) y filtrado a ≤ 100
-  const baseEntries: TimelineEntry[] = timeline
-    .filter((it) => typeof it.progress === "number" && Number.isFinite(it.progress) && it.progress <= 100)
-    .map((it) => {
-      const price  = typeof it.data?.pred_price  === "number" ? it.data.pred_price  : 0;
-      const demand = typeof it.data?.pred_demand === "number" ? it.data.pred_demand : 0;
-      const profit = price * demand; // proxy si no hay profit real
-      const p = Math.round(it.progress as number);
-
-      return {
-        progress: Math.max(0, Math.min(100, p)), // SIN normalizar; solo clamp por seguridad
-        isActive: true,
-        profit,
-        people: demand,
-        predictedProfit: profit,
-        profitError: 0,
-        predictedPeople: demand,
-        peopleError: 0,
-      };
-    });
-
-  // Si no hay ningún punto ≤ 100, no podemos alimentar el hook: volvemos undefined
-  if (baseEntries.length === 0) return undefined;
-
-  // 2) Índice por progress y conjunto disponibles
-  const byProgress = new Map<number, TimelineEntry>();
-  for (const e of baseEntries) byProgress.set(e.progress, e);
-  const available = Array.from(byProgress.keys()).sort((a, b) => a - b);
-
-  // Helper: último progress ≤ i (si no hay, el menor disponible)
-  const lastLE = (i: number) => {
-    // búsqueda binaria simple
-    let lo = 0, hi = available.length - 1, ans = available[0];
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      const v = available[mid];
-      if (v <= i) { ans = v; lo = mid + 1; } else { hi = mid - 1; }
-    }
-    return ans;
-  };
-
-  // 3) Relleno ventana de 10 puntos [max(0, rp-9) .. min(100, rp)]
-  const rp = Math.round(progress);
-  const start = Math.max(0, rp - 9);
-  const end   = Math.min(100, rp);
-
-  for (let i = start; i <= end; i++) {
-    if (!byProgress.has(i)) {
-      const refP = lastLE(i);
-      const refE = byProgress.get(refP)!;
-      byProgress.set(i, {
-        ...refE,
-        progress: i,
-        isActive: i <= rp,
-      });
-    } else {
-      // Marca activo según rp
-      const cur = byProgress.get(i)!;
-      byProgress.set(i, { ...cur, isActive: i <= rp });
-    }
-  }
-
-  // 4) Dedupe + orden ascendente (solo progress ≤ 100)
-  const deduped = Array.from(byProgress.values()).sort((a, b) => a.progress - b.progress);
-
-  return [
-    {
-      name: `${LOCATIONS[originKey].label} → ${LOCATIONS[destinationKey].label}`,
-      description: `${selectedDate} · Buque ${shipCode}`,
-      timeline: deduped,
-    },
-  ];
-}, [timeline, originKey, destinationKey, selectedDate, shipCode, progress]);
-
-// ⬇️ HistoricalData de PRECIO y DEMANDA: usa SOLO timeline API (≤100)
-const { priceHistoricalData, demandHistoricalData } = useMemo(() => {
-  if (!timeline?.length) return { priceHistoricalData: [], demandHistoricalData: [] };
-
-  // Mapas progress -> precio/demanda usando EXACTAMENTE la API y SOLO progress ≤ 100
-  const priceByProgress = new Map<number, number>();
-  const demandByProgress = new Map<number, number>();
-  
-  for (const it of timeline) {
-    if (typeof it.progress !== "number" || !Number.isFinite(it.progress)) continue;
-    if (it.progress > 100) continue; // los >100 son futuro, no entran aquí
-    const p = Math.max(0, Math.min(100, Math.round(it.progress)));
-    
-    const price = typeof it.data?.pred_price === "number" ? it.data.pred_price : null;
-    const demand = typeof it.data?.pred_demand === "number" ? it.data.pred_demand : null;
-    
-    if (price !== null) priceByProgress.set(p, price);
-    if (demand !== null) demandByProgress.set(p, demand);
-  }
-
-  // Ventana de 10 puntos [progress-9, progress] clamp a [0,100]
-  const rp = Math.round(progress);
-  const start = Math.max(0, rp - 9);
-  const end   = Math.min(100, rp);
-
-  // Helper LOCF: último valor disponible ≤ i
-  const lastLE = (map: Map<number, number>, i: number): number | null => {
-    const available = Array.from(map.keys()).sort((a, b) => a - b);
-    if (!available.length) return null;
-    
-    let lo = 0, hi = available.length - 1, ans = available[0];
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      const v = available[mid];
-      if (v <= i) { ans = v; lo = mid + 1; } else { hi = mid - 1; }
-    }
-    return ans <= i ? map.get(ans)! : null;
-  };
-
-  const priceOut: Array<{ progress: number; profit: number; predictedProfit: number; profitError: number; }> = [];
-  const demandOut: Array<{ progress: number; people: number; predictedPeople: number; peopleError: number; }> = [];
-  
-  for (let i = start; i <= end; i++) {
-    // Para precio: LOCF si no existe el punto exacto
-    const priceVal = priceByProgress.has(i) ? priceByProgress.get(i)! : (lastLE(priceByProgress, i) ?? 0);
-    priceOut.push({
-      progress: i,
-      profit: priceVal,
-      predictedProfit: priceVal,
-      profitError: 0,
-    });
-
-    // Para demanda: LOCF si no existe el punto exacto
-    const demandVal = demandByProgress.has(i) ? demandByProgress.get(i)! : (lastLE(demandByProgress, i) ?? 0);
-    demandOut.push({
-      progress: i,
-      people: demandVal,
-      predictedPeople: demandVal,
-      peopleError: 0,
-    });
-  }
-
-  return { priceHistoricalData: priceOut, demandHistoricalData: demandOut };
-}, [timeline, progress]);
-
-
-  
-const { currentMeanData } = useTravelStats(progress, apiTravels);
-  const timelineThreshold = 100;
-
-  
-
-  // Llamada al endpoint con lo seleccionado
+  // ───────────────────────── Llamada API ─────────────────────────
   const fetchPrediction = async () => {
     const originCode = LOCATIONS[originKey].origin;
     const destinationCode = LOCATIONS[destinationKey].destination;
@@ -284,19 +168,24 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
       });
 
       const first = full.timeline?.[0];
-      setPredPrice(
-        first && typeof first.data?.pred_price === "number" ? first.data.pred_price : null
-      );
-      setPredDemand(
-        first && typeof first.data?.pred_demand === "number" ? first.data.pred_demand : null
-      );
+      const priceNum = Number(first?.data?.pred_price);
+      const demandNum = Number(first?.data?.pred_demand);
+
+      setPredPrice(Number.isFinite(priceNum) ? priceNum : null);
+      setPredDemand(Number.isFinite(demandNum) ? demandNum : null);
       setApiWeights(first?.weights ?? null);
       setTimeline(full.timeline ?? []);
+
+      // ⬇️ parámetros reales que vienen de la API
+      setApiReasoning((first as any)?.reasoning ?? null);
+      setApiParams(((full as any)?.metadata?.parametros) ?? null);
     } catch (err) {
       setPredPrice(null);
       setPredDemand(null);
       setApiWeights(null);
       setTimeline([]);
+      setApiReasoning(null);
+      setApiParams(null);
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
     } finally {
@@ -304,13 +193,12 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
     }
   };
 
-  // Dispara cuando cambie cualquiera de los selectores
   useEffect(() => {
     fetchPrediction();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, shipCode, originKey, destinationKey]);
 
-  // ── Gauges ──
+  // ───────────────────────── Gauges ─────────────────────────
   const normPercent = (v: number | null, min: number, max: number) => {
     if (v == null || !Number.isFinite(v)) return 0;
     if (max <= min) return 0;
@@ -331,106 +219,59 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
       ? "#f59e0b"
       : "#dc2626";
   const demandColor = "#2563eb";
-  const timelineChartData = useMemo(() => {
-    if (!timeline.length) return [];
-    const mapped = timeline.map((item, index) => {
-      const progressValue =
-        typeof item.progress === "number" && Number.isFinite(item.progress)
-          ? item.progress
-          : index;
-      const priceValue =
-        typeof item.data?.pred_price === "number" ? item.data.pred_price : null;
-      const demandValue =
-        typeof item.data?.pred_demand === "number" ? item.data.pred_demand : null;
-      const isFuture = progressValue > timelineThreshold;
 
-      return {
-        progress: progressValue,
-        date: item.date,
-        price: priceValue,
-        demand: demandValue,
-        pricePast: !isFuture ? priceValue : null,
-        priceFuture: isFuture ? priceValue : null,
-      };
-    });
+  // ───────────────────────── TrendCharts (ARREGLO) ─────────────────────────
+  const { priceHistoricalData, demandHistoricalData } = useMemo(() => {
+    if (!timeline?.length) return { priceHistoricalData: [], demandHistoricalData: [] };
 
-    const firstFutureIndex = mapped.findIndex(
-      (point) =>
-        typeof point.progress === "number" &&
-        Number.isFinite(point.progress) &&
-        point.progress > timelineThreshold &&
-        point.price != null
-    );
+    const rows = timeline
+      .map((it, idx) => {
+        const p =
+          typeof it.progress === "number" && Number.isFinite(it.progress) ? it.progress : idx;
+        const price = Number(it?.data?.pred_price);
+        const demand = Number(it?.data?.pred_demand);
+        return {
+          progress: p,
+          price: Number.isFinite(price) ? price : null,
+          demand: Number.isFinite(demand) ? demand : null,
+        };
+      })
+      .filter(r => r.price !== null || r.demand !== null)
+      .sort((a, b) => a.progress - b.progress);
 
-    if (firstFutureIndex > 0) {
-      const previous = mapped[firstFutureIndex - 1];
-      if (previous) {
-        previous.priceFuture = previous.price;
-      }
-    } else if (firstFutureIndex === 0 && mapped.length) {
-      mapped[0].priceFuture = mapped[0].price;
+    const rp = Math.round(progress);
+
+    let upto = rows.filter(r => r.progress <= rp);
+    if (upto.length === 0) {
+      upto = rows.slice(0, Math.min(10, rows.length));
     }
 
-    return mapped;
-  }, [timeline, timelineThreshold]);
+    const window10 = upto.slice(-10);
 
-  const maxTimelineProgress = useMemo(() => {
-    const numericProgress = timelineChartData
-      .map((point) => point.progress)
-      .filter(
-        (value): value is number => typeof value === "number" && Number.isFinite(value)
-      );
-
-    if (!numericProgress.length) return null;
-    return Math.max(...numericProgress);
-  }, [timelineChartData]);
-
-  const timelineFutureDelta =
-    maxTimelineProgress != null
-      ? Math.max(0, maxTimelineProgress - timelineThreshold)
-      : 0;
-  const hasFutureBeyondThreshold = timelineFutureDelta > 0;
-  const typedModelWeights = useMemo(
-    () =>
-      modelWeightsData as Array<
-        { progress?: number } & Record<string, unknown>
-      >,
-    []
-  );
-
-  // ── Pesos → grafo para SHAPChart ──
-  const weightsToGraph = (w: ModelWeights) => {
-    const entries = Object.entries(w)
-      .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
-      .sort((a, b) => (b[1] as number) - (a[1] as number));
-    const total = entries.reduce((acc, [, v]) => acc + (v as number), 0) || 1;
-
-    const nodes = [
-      { id: "Prediction", label: "Prediction", group: 0, value: 1 },
-      ...entries.map(([k, v]) => ({
-        id: k,
-        label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-        group: 1,
-        value: Math.max(1, Math.round(((v as number) / total) * 100)),
-      })),
-    ];
-
-    const links = entries.map(([k, v]) => ({
-      source: k,
-      target: "Prediction",
-      value: v as number,
+    const priceOut = window10.map(r => ({
+      progress: r.progress,
+      Precio: r.price ?? 0,
+      predictedProfit: r.price ?? 0,
+      profitError: 0,
     }));
 
-    return { nodes, links };
-  };
+    const demandOut = window10.map(r => ({
+      progress: r.progress,
+      Demanda: r.demand ?? 0,
+      predictedPeople: r.demand ?? 0,
+      peopleError: 0,
+    }));
 
-  const currentModelWeights =
-    typedModelWeights.find(
-      (item) =>
-        typeof item.progress === "number" &&
-        item.progress === Math.floor(progress)
-    ) ?? typedModelWeights[0] ?? { nodes: [], links: [] };
+    return { priceHistoricalData: priceOut, demandHistoricalData: demandOut };
+  }, [timeline, progress]);
 
+  // ───────────────────────── SHAP (API → Chart) ─────────────────────────
+  const shapData = useMemo<SHAPData>(
+    () => buildShapFromApi(apiWeights, predDemand),
+    [apiWeights, predDemand]
+  );
+
+  // ───────────────────────── UI ─────────────────────────
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black overflow-hidden">
@@ -464,9 +305,8 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
             </div>
           </div>
 
-          {/* Selectores principales */}
+          {/* Selectores */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            {/* Fecha de salida */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Fecha de salida</label>
               <input
@@ -477,7 +317,6 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               />
             </div>
 
-            {/* Modelo de buque */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Modelo de buque</label>
               <input
@@ -489,7 +328,6 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               />
             </div>
 
-            {/* Origen agregado */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Origen</label>
               <select
@@ -505,7 +343,6 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               </select>
             </div>
 
-            {/* Destino agregado */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Destino</label>
               <select
@@ -522,7 +359,6 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
             </div>
           </div>
 
-          {/* Resumen selección */}
           <div className="text-[12px] text-neutral-600 dark:text-neutral-400">
             {LOCATIONS[originKey].label} (<code>{LOCATIONS[originKey].origin}</code>) →{" "}
             {LOCATIONS[destinationKey].label} (<code>{LOCATIONS[destinationKey].destination}</code>) ·{" "}
@@ -538,12 +374,7 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               {LOCATIONS[originKey].label} → {LOCATIONS[destinationKey].label} · {selectedDate}
             </p>
             <div className="mt-2">
-              <Gauge
-                percentage={pricePercentage}
-                color={priceColor}
-                value={predPrice ?? 0}
-                label="€ per person"
-              />
+              <Gauge percentage={pricePercentage} color={priceColor} value={predPrice ?? 0} label="€ per person" />
             </div>
           </div>
 
@@ -599,40 +430,55 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
             y explicabilidad del modelo para las decisiones tomadas en {Math.floor(progress)}.
           </CollapsibleCardDescription>
         </CollapsibleCardHeader>
-      <CollapsibleCardContent>
-                <Explanations
-        prediction={{
-          price: predPrice,
-          demand: predDemand,
-          weights: apiWeights,
-          meta: {
-            origin: LOCATIONS[originKey].origin,
-            destination: LOCATIONS[destinationKey].destination,
-            originLabel: LOCATIONS[originKey].label,
-            destinationLabel: LOCATIONS[destinationKey].label,
-            date: selectedDate,
-            codigo_buque: shipCode,
-            params: {
-              base_price: DEFAULTS.base_price,
-              min_price: DEFAULTS.min_price,
-              max_price: DEFAULTS.max_price,
-              capacity: DEFAULTS.capacity,
-              elasticity: DEFAULTS.elasticity,
-            },
-          },
-        }}
-      />
-
-                  <SHAPChart
-            key={`shap-${Math.floor(progress)}`}
-            data={{ nodes: currentModelWeights.nodes, links: currentModelWeights.links }}
-            className="h-[400px] w-full"
+        <CollapsibleCardContent>
+          <Explanations
+            prediction={{
+              price: predPrice,
+              demand: predDemand,
+              weights: apiWeights,
+              meta: {
+                origin: LOCATIONS[originKey].origin,
+                destination: LOCATIONS[destinationKey].destination,
+                originLabel: LOCATIONS[originKey].label,
+                destinationLabel: LOCATIONS[destinationKey].label,
+                date: selectedDate,
+                codigo_buque: shipCode,
+                params: {
+                  base_price: DEFAULTS.base_price,
+                  min_price: DEFAULTS.min_price,
+                  max_price: DEFAULTS.max_price,
+                  capacity: DEFAULTS.capacity,
+                  elasticity: DEFAULTS.elasticity,
+                },
+              },
+            }}
           />
-          <InsightCards />
+
+          {shapData.nodes.length > 1 ? (
+            <SHAPChart
+              key={`shap-${Math.floor(progress)}`}
+              data={shapData}
+              baseValue={0}
+              className="h-[400px] w-full"
+            />
+          ) : (
+            <div className="text-sm text-neutral-500 px-2">
+              Sin datos de explicabilidad para esta predicción.
+            </div>
+          )}
+
+          {/* Ahora las tarjetas analíticas usan SOLO lo que llega por API */}
+          <InsightCards
+            price={predPrice}
+            demand={predDemand}
+            weights={apiWeights}
+            reasoning={apiReasoning}
+            params={apiParams}
+          />
         </CollapsibleCardContent>
       </CollapsibleCard>
 
-      {/* Tendencias (igual que antes) */}
+      {/* Tendencias */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black">
           <CardHeader>
@@ -657,7 +503,6 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
             <CardDescription className="text-neutral-600 dark:text-neutral-400">Last 10 progress points</CardDescription>
           </CardHeader>
           <CardContent>
-
             <TrendChart
               data={demandHistoricalData}
               actualDataKey="Demanda"

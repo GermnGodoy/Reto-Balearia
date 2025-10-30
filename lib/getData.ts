@@ -121,7 +121,12 @@ function toIsoDate(d: Date): string {
 }
 
 function ensureNumber(n: any): number | null {
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
+  if (typeof n === "number" && Number.isFinite(n)) return n;
+  if (typeof n === "string") {
+    const v = parseFloat(n.replace(",", "."));
+    return Number.isFinite(v) ? v : null;
+  }
+  return null;
 }
 
 /** ================== FUNCIÓN PRINCIPAL ================== **/
@@ -152,7 +157,7 @@ export async function getData(
     n_days: typeof opts.n_days === "number" ? opts.n_days : 7,
     tabla: opts.tabla ?? "balearia_dataset_nuevo.LIMPIO_SINCOS",
     get_input: opts.get_input ?? true,
-    base_price: opts.base_price ?? 60,
+    base_price: opts.base_price ?? 80,
     min_price: opts.min_price ?? 20,
     max_price: opts.max_price ?? 200,
     capacity: opts.capacity ?? 80,
@@ -193,8 +198,8 @@ export async function getData(
     // Coerciones suaves
     const cleanTimeline: TimelineItem[] = json.timeline.map((t: any) => ({
       data: {
-        pred_demand: ensureNumber(t?.data?.pred_demand) ?? 0,
-        pred_price: ensureNumber(t?.data?.pred_price) ?? 0,
+        pred_demand: ensureNumber(t?.data?.pred_demand) ?? null,
+        pred_price:  ensureNumber(t?.data?.pred_price)  ?? null,
       },
       date: String(t?.date ?? ""),
       gauge: t?.gauge ?? undefined,
@@ -202,6 +207,7 @@ export async function getData(
       reasoning: t?.reasoning ?? undefined,
       weights: t?.weights ?? undefined,
     }));
+
 
     const result: PredictAPIResponse = {
       metadata: json.metadata as PredictMetadata,
@@ -223,17 +229,17 @@ export async function getData(
  * Devuelve { price, demand, weights } del primer elemento del timeline.
  * Útil cuando solo necesitas alimentar gauges/SHAP rápido.
  */
-export async function getPredictedNumbers(
-  date: string,
-  origin: string,
-  destination: string,
-  opts: PredictOptions = {}
-): Promise<{ price: number | null; demand: number | null; weights: ModelWeights | null }> {
-  const full = await getData(date, origin, destination, opts);
-  const first = full.timeline?.[0];
+// export async function getPredictedNumbers(
+//   date: string,
+//   origin: string,
+//   destination: string,
+//   opts: PredictOptions = {}
+// ): Promise<{ price: number | null; demand: number | null; weights: ModelWeights | null }> {
+//   const full = await getData(date, origin, destination, opts);
+//   const first = full.timeline?.[0];
 
-  const price = ensureNumber(first?.data?.pred_price);
-  const demand = ensureNumber(first?.data?.pred_demand);
-  const weights = (first?.weights && typeof first.weights === "object") ? (first.weights as ModelWeights) : null;
-  return { price, demand, weights };
-}
+//   const price = ensureNumber(first?.data?.pred_price);
+//   const demand = ensureNumber(first?.data?.pred_demand);
+//   const weights = (first?.weights && typeof first.weights === "object") ? (first.weights as ModelWeights) : null;
+//   return { price, demand, weights };
+// }
