@@ -7,7 +7,6 @@ import { useProgress } from "@/contexts/ProgressContext";
 import { TrendChart } from "@/components/charts/TrendChart";
 import Gauge from "@/components/ui/gauge";
 import { SHAPChart } from "@/components/charts/SHAPChart";
-import modelWeightsData from "@/data/model-weights.json";
 import InsightCards from "../ui/insightCards";
 import {
   CollapsibleCard,
@@ -27,16 +26,11 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 
-// ⬇️ usamos tu helper que ya devuelve precio, demanda y weights
+// ⬇️ helper que ya devuelve precio, demanda y weights
 import { getData, type ModelWeights, type TimelineItem } from "@/lib/getData";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { ComposedChart, Line, XAxis, YAxis, ReferenceLine } from "recharts";
-
 import type { Travel, TimelineEntry } from "@/contexts/travelsContext";
 
 // ─────────────────── Utilidades ───────────────────
-
-// Título con capitalización amable
 const toTitle = (s: string) =>
   s
     .toUpperCase()
@@ -53,19 +47,29 @@ type AggKey =
   | "BARCELONA"
   | "VALÈNCIA"
   | "DÉNIA"
-  | "IBIZA"
+  | "IBIZA"                // Ibiza (Eivissa)
+  | "IBIZA_SANT_ANTONI"    // Ibiza (Sant Antoni)
   | "FORMENTERA"
-  | "MALLORCA"
-  | "MENORCA";
+  | "MALLORCA"             // Mallorca (Palma)
+  | "MALLORCA_ALCÚDIA"     // Mallorca (Alcúdia)
+  | "MENORCA"              // Menorca (Maó)
+  | "MENORCA_CIUTADELLA";  // Menorca (Ciutadella)
 
 const LOCATIONS: Record<AggKey, { label: string; origin: string; destination: string }> = {
-  BARCELONA:  { label: "Barcelona",  origin: "OO01", destination: "DD09" },
-  "VALÈNCIA": { label: "València",   origin: "OO04", destination: "DD06" },
-  "DÉNIA":    { label: "Dénia",      origin: "OO06", destination: "DD08" },
-  IBIZA:      { label: "Ibiza",      origin: "OO05", destination: "DD07" }, // Eivissa/Botafoc
-  FORMENTERA: { label: "Formentera", origin: "OO11", destination: "DD13" },
-  MALLORCA:   { label: "Mallorca",   origin: "OO07", destination: "DD01" }, // Palma
-  MENORCA:    { label: "Menorca",    origin: "OO10", destination: "DD12" }, // Maó
+  BARCELONA:             { label: "Barcelona",              origin: "OO01", destination: "DD09" },
+  "VALÈNCIA":            { label: "València",               origin: "OO04", destination: "DD06" },
+  "DÉNIA":               { label: "Dénia",                  origin: "OO06", destination: "DD08" },
+
+  IBIZA:                 { label: "Ibiza (Eivissa)",        origin: "OO05", destination: "DD07" },
+  IBIZA_SANT_ANTONI:     { label: "Ibiza (Sant Antoni)",    origin: "OO02", destination: "DD14" },
+
+  FORMENTERA:            { label: "Formentera (La Savina)", origin: "OO11", destination: "DD13" },
+
+  MALLORCA:              { label: "Mallorca (Palma)",       origin: "OO07", destination: "DD01" },
+  MALLORCA_ALCÚDIA:      { label: "Mallorca (Alcúdia)",     origin: "OO08", destination: "DD11" },
+
+  MENORCA:               { label: "Menorca (Maó)",          origin: "OO10", destination: "DD12" },
+  MENORCA_CIUTADELLA:    { label: "Menorca (Ciutadella)",   origin: "OO09", destination: "DD10" },
 };
 
 const LOCATION_ORDER: AggKey[] = [
@@ -73,9 +77,12 @@ const LOCATION_ORDER: AggKey[] = [
   "VALÈNCIA",
   "DÉNIA",
   "IBIZA",
+  "IBIZA_SANT_ANTONI",
   "FORMENTERA",
   "MALLORCA",
+  "MALLORCA_ALCÚDIA",
   "MENORCA",
+  "MENORCA_CIUTADELLA",
 ];
 
 // ─────────────────── Parámetros por defecto ───────────────────
@@ -93,26 +100,46 @@ const DEFAULTS = {
   destinationKey: "IBIZA" as AggKey,
 };
 
+// ───────── Pesos → grafo para SHAPChart (escala a %; suma ≈ 100) ─────────
+const weightsToGraphPercent = (w: ModelWeights) => {
+  const entries = Object.entries(w)
+    .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+    .sort((a, b) => (b[1] as number) - (a[1] as number));
+
+  const total = entries.reduce((acc, [, v]) => acc + (v as number), 0);
+  const safeTotal = total > 0 ? total : 1;
+
+  const nodes = [
+    { id: "Prediction", label: "Prediction" },
+    ...entries.map(([k]) => ({
+      id: k,
+      label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    })),
+  ];
+
+  const links = entries.map(([k, v]) => ({
+    source: k,
+    target: "Prediction",
+    value: ((v as number) / safeTotal) * 100, // porcentaje
+  }));
+
+  return { nodes, links };
+};
 
 // ─────────────────── Componente ───────────────────
 export default function StatsTab() {
-
-  
-
   const { progress } = useProgress();
 
-  // Map progress (0-100) to data index (0-9) for 10 data points
-  // Progress 0-9 → index 0, 10-19 → index 1, ... 90-100 → index 9
+  // Progress 0-9 → idx 0, 10-19 → idx 1, ... 90-100 → idx 9
   const currentDataIndex = Math.min(Math.floor(progress / 10), 9);
 
-
-  // Selecciones controladas (fecha, buque, origen/destino agregados)
+  // Selectores
   const [selectedDate, setSelectedDate] = useState<string>(DEFAULTS.date);
   const [shipCode, setShipCode] = useState<string>(DEFAULTS.shipCode);
   const [originKey, setOriginKey] = useState<AggKey>(DEFAULTS.originKey);
   const [destinationKey, setDestinationKey] = useState<AggKey>(DEFAULTS.destinationKey);
 
-  // ── Estado de predicción ──
+  // Estado de predicción
   const [predPrice, setPredPrice] = useState<number | null>(null);
   const [predDemand, setPredDemand] = useState<number | null>(null);
   const [apiWeights, setApiWeights] = useState<ModelWeights | null>(null);
@@ -121,105 +148,95 @@ export default function StatsTab() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
 
   // Adaptador API → travels.json para useTravelStats
-// Convert timeline items to the format expected by useTravelStats
-const apiTravels: Travel[] | undefined = useMemo(() => {
-  if (!timeline?.length) return undefined;
+  const apiTravels: Travel[] | undefined = useMemo(() => {
+    if (!timeline?.length) return undefined;
 
-  const currentDay = Math.min(Math.floor(progress / 10), 9);
+    const currentDay = Math.min(Math.floor(progress / 10), 9);
+    const entries: TimelineEntry[] = [];
 
-  // Map each day (0 through currentDay) to a timeline entry
-  const entries: TimelineEntry[] = [];
-  for (let day = 0; day <= currentDay; day++) {
-    const item = timeline[day];
-    if (!item) continue;
+    for (let day = 0; day <= currentDay; day++) {
+      const item = timeline[day];
+      if (!item) continue;
 
-    const price = typeof item.data?.pred_price === "number" ? item.data.pred_price : 0;
-    const demand = typeof item.data?.pred_demand === "number" ? item.data.pred_demand : 0;
-    const profit = price * demand;
-    const p = day * 10;
+      const price = typeof item.data?.pred_price === "number" ? item.data.pred_price : 0;
+      const demand = typeof item.data?.pred_demand === "number" ? item.data.pred_demand : 0;
+      const profit = price * demand;
+      const p = day * 10;
 
-    entries.push({
-      progress: p,
-      isActive: true,
-      profit,
-      people: demand,
-      predictedProfit: profit,
-      profitError: 0,
-      predictedPeople: demand,
-      peopleError: 0,
-    });
-  }
+      entries.push({
+        progress: p,
+        isActive: true,
+        profit,
+        people: demand,
+        predictedProfit: profit,
+        profitError: 0,
+        predictedPeople: demand,
+        peopleError: 0,
+      });
+    }
 
-  if (entries.length === 0) return undefined;
+    if (entries.length === 0) return undefined;
 
-  return [
-    {
-      name: `${LOCATIONS[originKey].label} → ${LOCATIONS[destinationKey].label}`,
-      description: `${selectedDate} · Buque ${shipCode}`,
-      timeline: entries,
-    },
-  ];
-}, [timeline, originKey, destinationKey, selectedDate, shipCode, progress]);
+    return [
+      {
+        name: `${LOCATIONS[originKey].label} → ${LOCATIONS[destinationKey].label}`,
+        description: `${selectedDate} · Buque ${shipCode}`,
+        timeline: entries,
+      },
+    ];
+  }, [timeline, originKey, destinationKey, selectedDate, shipCode, progress]);
 
-// ⬇️ HistoricalData de PRECIO y DEMANDA: usa SOLO timeline API (≤100)
-const { priceHistoricalData, demandHistoricalData } = useMemo(() => {
-  if (!timeline?.length) {
-    return { priceHistoricalData: [], demandHistoricalData: [] };
-  }
+  // HistoricalData (≤100)
+  const { priceHistoricalData, demandHistoricalData } = useMemo(() => {
+    if (!timeline?.length) {
+      return { priceHistoricalData: [], demandHistoricalData: [] };
+    }
 
-  // Mapas progress -> precio/demanda usando EXACTAMENTE la API y SOLO progress ≤ 100
-  const priceByProgress = new Map<number, number>();
-  const demandByProgress = new Map<number, number>();
-  
-  for (const it of timeline) {
-    if (typeof it.progress !== "number" || !Number.isFinite(it.progress)) continue;
-    if (it.progress > 100) continue; // los >100 son futuro, no entran aquí
-    const p = Math.max(0, Math.min(100, Math.round(it.progress)));
-    
-    const price = typeof it.data?.pred_price === "number" ? it.data.pred_price : null;
-    const demand = typeof it.data?.pred_demand === "number" ? it.data.pred_demand : null;
-    
-    if (price !== null) priceByProgress.set(p, price);
-    if (demand !== null) demandByProgress.set(p, demand);
-  }
+    const priceByProgress = new Map<number, number>();
+    const demandByProgress = new Map<number, number>();
 
-  // Show all days from day 0 up to current day (based on progress)
-  // Progress 0-9 → day 0, 10-19 → day 1, ..., 90-100 → day 9
-  const currentDay = Math.min(Math.floor(progress / 10), 9);
+    for (const it of timeline) {
+      if (typeof it.progress !== "number" || !Number.isFinite(it.progress)) continue;
+      if (it.progress > 100) continue; // >100 = futuro, fuera
+      const p = Math.max(0, Math.min(100, Math.round(it.progress)));
 
-  const priceOut: Array<{ progress: number; profit: number; predictedProfit: number; profitError: number; }> = [];
-  const demandOut: Array<{ progress: number; people: number; predictedPeople: number; peopleError: number; }> = [];
+      const price = typeof it.data?.pred_price === "number" ? it.data.pred_price : null;
+      const demand = typeof it.data?.pred_demand === "number" ? it.data.pred_demand : null;
 
-  // Only output actual data points (at progress 0, 10, 20, ..., up to current day)
-  for (let day = 0; day <= currentDay; day++) {
-    const p = day * 10;
-    const priceVal = priceByProgress.get(p) ?? 0;
-    const demandVal = demandByProgress.get(p) ?? 0;
+      if (price !== null) priceByProgress.set(p, price);
+      if (demand !== null) demandByProgress.set(p, demand);
+    }
 
-    priceOut.push({
-      progress: p,
-      profit: priceVal,
-      predictedProfit: priceVal,
-      profitError: 0,
-    });
+    const currentDay = Math.min(Math.floor(progress / 10), 9);
 
-    demandOut.push({
-      progress: p,
-      people: demandVal,
-      predictedPeople: demandVal,
-      peopleError: 0,
-    });
-  }
+    const priceOut: Array<{ progress: number; profit: number; predictedProfit: number; profitError: number }> = [];
+    const demandOut: Array<{ progress: number; people: number; predictedPeople: number; peopleError: number }> = [];
 
-  return { priceHistoricalData: priceOut, demandHistoricalData: demandOut };
-}, [timeline, progress]);
+    for (let day = 0; day <= currentDay; day++) {
+      const p = day * 10;
+      const priceVal = priceByProgress.get(p) ?? 0;
+      const demandVal = demandByProgress.get(p) ?? 0;
 
+      priceOut.push({
+        progress: p,
+        profit: priceVal,
+        predictedProfit: priceVal,
+        profitError: 0,
+      });
 
-  
-const { currentMeanData } = useTravelStats(progress, apiTravels);
+      demandOut.push({
+        progress: p,
+        people: demandVal,
+        predictedPeople: demandVal,
+        peopleError: 0,
+      });
+    }
+
+    return { priceHistoricalData: priceOut, demandHistoricalData: demandOut };
+  }, [timeline, progress]);
+
+  const { currentMeanData } = useTravelStats(progress, apiTravels);
   const timelineThreshold = 100;
-
-  
 
   // Llamada al endpoint con lo seleccionado
   const fetchPrediction = async () => {
@@ -240,24 +257,23 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
         timeoutMs: DEFAULTS.timeoutMs,
       });
 
-      // Store the full timeline with proper progress values (0, 10, 20, ..., 90 for 10 days)
-      // This maps day index to progress: day 0 → 0-9%, day 1 → 10-19%, ..., day 9 → 90-100%
+      // Normaliza progress por índice (0,10,20,...,90)
       const timelineWithProgress = (full.timeline ?? []).map((item, index) => ({
         ...item,
-        progress: index * 10, // Assign progress: 0, 10, 20, 30, ..., 90
+        progress: index * 10,
       }));
 
       setTimeline(timelineWithProgress);
 
-      // Initial values from first data point
+      // Inicializa con el primer punto
       const first = full.timeline?.[0];
-      setPredPrice(
-        first && typeof first.data?.pred_price === "number" ? first.data.pred_price : null
-      );
-      setPredDemand(
-        first && typeof first.data?.pred_demand === "number" ? first.data.pred_demand : null
-      );
+      setPredPrice(first && typeof first.data?.pred_price === "number" ? first.data.pred_price : null);
+      setPredDemand(first && typeof first.data?.pred_demand === "number" ? first.data.pred_demand : null);
       setApiWeights(first?.weights ?? null);
+
+      // DEBUG opcional:
+      // console.log("[API] timeline len:", (full.timeline ?? []).length);
+      // console.log("[API] first.weights keys:", first?.weights ? Object.keys(first.weights) : []);
     } catch (err) {
       setPredPrice(null);
       setPredDemand(null);
@@ -276,15 +292,13 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, shipCode, originKey, destinationKey]);
 
-  // Update displayed data when progress changes
+  // Actualiza valores mostrados al cambiar progress
   useEffect(() => {
     if (timeline.length > 0 && currentDataIndex < timeline.length) {
       const currentItem = timeline[currentDataIndex];
-
       if (currentItem) {
         const newPrice = typeof currentItem.data?.pred_price === "number" ? currentItem.data.pred_price : null;
         const newDemand = typeof currentItem.data?.pred_demand === "number" ? currentItem.data.pred_demand : null;
-
         setPredPrice(newPrice);
         setPredDemand(newDemand);
         setApiWeights(currentItem.weights ?? null);
@@ -301,8 +315,7 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
   };
 
   const pricePercentage = normPercent(predPrice, DEFAULTS.min_price, DEFAULTS.max_price);
-  const demandPercentage =
-    predDemand != null ? Math.max(0, Math.min(100, Math.round(predDemand))) : 0;
+  const demandPercentage = predDemand != null ? Math.max(0, Math.min(100, Math.round(predDemand))) : 0;
 
   const priceColor =
     predPrice == null
@@ -313,17 +326,14 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
       ? "#f59e0b"
       : "#dc2626";
   const demandColor = "#2563eb";
+
   const timelineChartData = useMemo(() => {
     if (!timeline.length) return [];
     const mapped = timeline.map((item, index) => {
       const progressValue =
-        typeof item.progress === "number" && Number.isFinite(item.progress)
-          ? item.progress
-          : index;
-      const priceValue =
-        typeof item.data?.pred_price === "number" ? item.data.pred_price : null;
-      const demandValue =
-        typeof item.data?.pred_demand === "number" ? item.data.pred_demand : null;
+        typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : index;
+      const priceValue = typeof item.data?.pred_price === "number" ? item.data.pred_price : null;
+      const demandValue = typeof item.data?.pred_demand === "number" ? item.data.pred_demand : null;
       const isFuture = progressValue > timelineThreshold;
 
       return {
@@ -359,66 +369,33 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
   const maxTimelineProgress = useMemo(() => {
     const numericProgress = timelineChartData
       .map((point) => point.progress)
-      .filter(
-        (value): value is number => typeof value === "number" && Number.isFinite(value)
-      );
-
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     if (!numericProgress.length) return null;
     return Math.max(...numericProgress);
   }, [timelineChartData]);
 
-  const timelineFutureDelta =
-    maxTimelineProgress != null
-      ? Math.max(0, maxTimelineProgress - timelineThreshold)
-      : 0;
+  const timelineFutureDelta = maxTimelineProgress != null ? Math.max(0, maxTimelineProgress - timelineThreshold) : 0;
   const hasFutureBeyondThreshold = timelineFutureDelta > 0;
-  const typedModelWeights = useMemo(
-    () =>
-      modelWeightsData as Array<
-        { progress?: number } & Record<string, unknown>
-      >,
-    []
-  );
 
-  // ── Pesos → grafo para SHAPChart ──
-  const weightsToGraph = (w: ModelWeights) => {
-    const entries = Object.entries(w)
-      .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
-      .sort((a, b) => (b[1] as number) - (a[1] as number));
-    const total = entries.reduce((acc, [, v]) => acc + (v as number), 0) || 1;
+  // ── Pesos del punto actual → SHAP ──
+  const currentWeights: ModelWeights | null = useMemo(() => {
+    if (timeline.length > 0 && currentDataIndex < timeline.length) {
+      const w = timeline[currentDataIndex]?.weights;
+      if (w && Object.keys(w).length) return w;
+    }
+    return apiWeights && Object.keys(apiWeights).length ? apiWeights : null;
+  }, [timeline, currentDataIndex, apiWeights]);
 
-    const nodes = [
-      { id: "Prediction", label: "Prediction", group: 0, value: 1 },
-      ...entries.map(([k, v]) => ({
-        id: k,
-        label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-        group: 1,
-        value: Math.max(1, Math.round(((v as number) / total) * 100)),
-      })),
-    ];
-
-    const links = entries.map(([k, v]) => ({
-      source: k,
-      target: "Prediction",
-      value: v as number,
-    }));
-
-    return { nodes, links };
-  };
-
-  const currentModelWeights =
-    typedModelWeights.find(
-      (item) =>
-        typeof item.progress === "number" &&
-        item.progress === Math.floor(progress)
-    ) ?? typedModelWeights[0] ?? { nodes: [], links: [] };
+  const shapData = useMemo(() => {
+    if (!currentWeights) return { nodes: [], links: [] };
+    return weightsToGraphPercent(currentWeights);
+  }, [currentWeights]);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black overflow-hidden">
         {/* Controles */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/40 space-y-3">
-          {/* Selectores principales */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             {/* Fecha de salida */}
             <div className="flex flex-col">
@@ -443,7 +420,7 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               />
             </div>
 
-            {/* Origen agregado */}
+            {/* Origen */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Origen</label>
               <Select value={originKey} onValueChange={(value) => setOriginKey(value as AggKey)}>
@@ -460,7 +437,7 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
               </Select>
             </div>
 
-            {/* Destino agregado */}
+            {/* Destino */}
             <div className="flex flex-col">
               <label className="text-xs text-neutral-700 dark:text-neutral-300 mb-1">Destino</label>
               <Select value={destinationKey} onValueChange={(value) => setDestinationKey(value as AggKey)}>
@@ -481,30 +458,25 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
           {/* Resumen selección */}
           <div className="text-[12px] text-neutral-600 dark:text-neutral-400">
             {LOCATIONS[originKey].label} (<code>{LOCATIONS[originKey].origin}</code>) →{" "}
-            {LOCATIONS[destinationKey].label} (<code>{LOCATIONS[destinationKey].destination}</code>) ·{" "}
-            {selectedDate} · Buque <code>{shipCode}</code>
+            {LOCATIONS[destinationKey].label} (<code>{LOCATIONS[destinationKey].destination}</code>) · {selectedDate} ·
+            Buque <code>{shipCode}</code>
           </div>
         </div>
 
         {/* Gauges */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
           <div className="flex flex-col items-center justify-center px-6 py-4">
-            <h3 className="text-sm font-medium text-black dark:text-white">Predicted Price</h3>
+            <h3 className="text-sm font-medium text-black dark:text-white">Precio predicho</h3>
             <p className="text-xs text-neutral-600 dark:text-neutral-400">
               {LOCATIONS[originKey].label} → {LOCATIONS[destinationKey].label} · {selectedDate}
             </p>
             <div className="mt-2">
-              <Gauge
-                percentage={pricePercentage}
-                color={priceColor}
-                value={predPrice ?? 0}
-                label="€ per person"
-              />
+              <Gauge percentage={pricePercentage} color={priceColor} value={predPrice ?? 0} label="€ per person" />
             </div>
           </div>
 
           <div className="flex flex-col items-center justify-center px-6 py-4">
-            <h3 className="text-sm font-medium text-black dark:text-white">Predicted Demand</h3>
+            <h3 className="text-sm font-medium text-black dark:text-white">Demanda predicha</h3>
             <p className="text-xs text-neutral-600 dark:text-neutral-400">
               {LOCATIONS[originKey].label} → {LOCATIONS[destinationKey].label} · {selectedDate}
             </p>
@@ -522,19 +494,19 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
         {/* Extra info */}
         <div className="flex justify-center pb-4">
           <div className="mt-2 grid grid-cols-2 gap-4 w-full max-w-xs">
-            <div className="flex flex-col items-center justify-center p-0 space-y-0 rounded-lg bg-neutral-50 dark:bg-black/50">
+            <div className="flex flex-col items-center justify-center p-0 space-y-0 rounded-lg bg-neutral-50 dark:bg.black/50">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
-                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Pred. Price</span>
+                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Precio</span>
               </div>
-              <div className="text-xl font-bold text-black dark:text-white">
+              <div className="text-xl font-bold text.black dark:text-white">
                 {predPrice != null ? `€${predPrice.toFixed(2)}` : "—"}
               </div>
             </div>
             <div className="flex flex-col items-center justify-center p-0 space-y-0 rounded-lg bg-neutral-50 dark:bg-black/50">
               <div className="flex items-center gap-1.5">
                 <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Pred. Demand</span>
+                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Demanda</span>
               </div>
               <div className="text-2xl font-bold text-black dark:text-white">
                 {predDemand != null ? Math.round(predDemand) : "—"}
@@ -543,8 +515,8 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
           </div>
         </div>
 
-        {loading && <div className="px-6 pb-4 text-sm text-neutral-500">Loading predictions…</div>}
-        {error && <div className="px-6 pb-4 text-sm text-red-600">Error loading prediction: {error}</div>}
+        {loading && <div className="px-6 pb-4 text-sm text-neutral-500">Cargando predicciones…</div>}
+        {error && <div className="px-6 pb-4 text-sm text-red-600">Error cargando predicciones: {error}</div>}
       </Card>
 
       {/* Explicabilidad */}
@@ -555,36 +527,45 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
             y explicabilidad del modelo para las decisiones tomadas en {Math.floor(progress)}.
           </CollapsibleCardDescription>
         </CollapsibleCardHeader>
-      <CollapsibleCardContent>
-                <Explanations
-        prediction={{
-          price: predPrice,
-          demand: predDemand,
-          weights: apiWeights,
-          meta: {
-            origin: LOCATIONS[originKey].origin,
-            destination: LOCATIONS[destinationKey].destination,
-            originLabel: LOCATIONS[originKey].label,
-            destinationLabel: LOCATIONS[destinationKey].label,
-            date: selectedDate,
-            codigo_buque: shipCode,
-            params: {
-              base_price: DEFAULTS.base_price,
-              min_price: DEFAULTS.min_price,
-              max_price: DEFAULTS.max_price,
-              capacity: DEFAULTS.capacity,
-              elasticity: DEFAULTS.elasticity,
-            },
-          },
-        }}
-      />
+        <CollapsibleCardContent>
+          <Explanations
+            prediction={{
+              price: predPrice,
+              demand: predDemand,
+              weights: apiWeights,
+              meta: {
+                origin: LOCATIONS[originKey].origin,
+                destination: LOCATIONS[destinationKey].destination,
+                originLabel: LOCATIONS[originKey].label,
+                destinationLabel: LOCATIONS[destinationKey].label,
+                date: selectedDate,
+                codigo_buque: shipCode,
+                params: {
+                  base_price: DEFAULTS.base_price,
+                  min_price: DEFAULTS.min_price,
+                  max_price: DEFAULTS.max_price,
+                  capacity: DEFAULTS.capacity,
+                  elasticity: DEFAULTS.elasticity,
+                },
+              },
+            }}
+          />
 
-                  <SHAPChart
+          <SHAPChart
             key={`shap-${Math.floor(progress)}`}
-            data={{ nodes: currentModelWeights.nodes, links: currentModelWeights.links }}
+            data={shapData}
+            baseValue={0} // waterfall suma ≈100 (%)
             className="h-[400px] w-full"
           />
-          <InsightCards />
+
+          <InsightCards
+            progress={Math.floor(progress)} // 0..100 de la UI
+            weightsTimeline={timeline.map((t, i) => ({
+              progress: i * 10, // 0,10,20,...,90
+              weights: t?.weights ?? null,
+            }))}
+            weights={apiWeights} // fallback opcional
+          />
         </CollapsibleCardContent>
       </CollapsibleCard>
 
@@ -597,12 +578,8 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
                 <FileText className="h-6 w-6 text-black dark:text-white" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-black dark:text-white">
-                  Informe de Análisis
-                </h3>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                  Generado el 30/12/2025
-                </p>
+                <h3 className="text-base font-semibold text-black dark:text-white">Informe de Análisis</h3>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">Generado el 30/10/2025</p>
               </div>
             </div>
             <Button asChild>
@@ -615,12 +592,12 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
         </CardContent>
       </Card>
 
-      {/* Tendencias (igual que antes) */}
+      {/* Tendencias */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black">
           <CardHeader>
-            <CardTitle className="text-black dark:text-white">Total Profit Trend</CardTitle>
-            <CardDescription className="text-neutral-600 dark:text-neutral-400">Last 10 progress points</CardDescription>
+            <CardTitle className="text-black dark:text-white">Tendencia del Precio</CardTitle>
+            <CardDescription className="text-neutral-600 dark:text-neutral-400">Próximos días</CardDescription>
           </CardHeader>
           <CardContent>
             <TrendChart
@@ -634,13 +611,12 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
           </CardContent>
         </Card>
 
-        <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black">
+        <Card className="border-neutral-200 dark:border-neutral-700 bg.white dark:bg-black">
           <CardHeader>
-            <CardTitle className="text-black dark:text-white">Total People Trend</CardTitle>
-            <CardDescription className="text-neutral-600 dark:text-neutral-400">Last 10 progress points</CardDescription>
+            <CardTitle className="text-black dark:text-white">Tendencia de la Demanda</CardTitle>
+            <CardDescription className="text-neutral-600 dark:text-neutral-400">Próximos días</CardDescription>
           </CardHeader>
           <CardContent>
-
             <TrendChart
               data={demandHistoricalData}
               actualDataKey="people"

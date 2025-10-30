@@ -61,7 +61,7 @@ export default function TravelsTab() {
               className="w-[280px] justify-start text-left font-normal"
             >
               <CalendarIcon className="mr-2 h-4 w-4" />
-              {date ? format(date, "PPP") : <span>Pick a date</span>}
+              {date ? format(date, "PPP") : <span>Selecciona una fecha</span>}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0">
@@ -85,11 +85,11 @@ export default function TravelsTab() {
 
       {isLoading ? (
         <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-          Loading travels...
+          Cargando viajes...
         </div>
       ) : travelsData.length === 0 ? (
         <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-          No active travels found for this date
+          Ningún viaje encontrado para esta fecha
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-7xl mx-auto">

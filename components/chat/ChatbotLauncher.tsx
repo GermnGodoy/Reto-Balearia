@@ -10,7 +10,7 @@ export default function ChatbotLauncher() {
     {
       role: "assistant",
       content:
-        "Hi! I’m your Gemini-powered assistant. Ask me about your map, stats, or travels.",
+        "Hola! Soy Baleito, tu asistente personal de ventas. ¿Tienes alguna pregunta?.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -48,7 +48,7 @@ export default function ChatbotLauncher() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemPrompt:
-            "You are a helpful, concise assistant for a logistics + travel analytics app. Use short, actionable answers.",
+            "Eres un ayudante de un equipo técnico de ventas de Balearia. Tu objetivo es tratar de que el personal entienda toda la infromación proporcionada.",
           messages: convo,
         }),
       });
@@ -76,7 +76,7 @@ export default function ChatbotLauncher() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "⚠️ Network error. Please try again." },
+        { role: "assistant", content: "⚠️ Error de conexión." },
       ]);
     } finally {
       setLoading(false);
@@ -94,7 +94,7 @@ export default function ChatbotLauncher() {
         >
           <Image
             src="/baleito.png"   // put baleito.png in /public
-            alt="Open chat"
+            alt="Abrir chat"
             width={90}
             height={90}
             className="h-10 w-10 rounded-full object-cover"
@@ -116,12 +116,12 @@ export default function ChatbotLauncher() {
         aria-label="Baleito"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/80 dark:border-neutral-800/80 rounded-t-3xl">
-          <div className="font-semibold">Gemini Assistant</div>
+          <div className="font-semibold">Baleito</div>
           <button
             onClick={() => setOpen(false)}
             className="rounded-full px-3 py-1.5 text-xs border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-900"
           >
-            Close
+            Cerrar
           </button>
         </div>
 
@@ -145,7 +145,7 @@ export default function ChatbotLauncher() {
 
           {loading && (
             <div className="mr-auto max-w-[85%] rounded-2xl px-3 py-2 text-sm bg-[#e0efef] dark:bg-neutral-900 ring-1 ring-black/5 dark:ring-white/10">
-              Thinking…
+              Pensando…
             </div>
           )}
         </div>
@@ -166,7 +166,7 @@ export default function ChatbotLauncher() {
               disabled={loading}
               className="rounded-full px-4 py-2 text-sm bg-black text-white dark:bg-white dark:text-black border border-transparent hover:opacity-90 disabled:opacity-60"
             >
-              Send
+              Enviar
             </button>
           </div>
         </form>

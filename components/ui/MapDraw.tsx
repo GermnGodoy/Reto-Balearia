@@ -303,12 +303,12 @@ export default function DrawMap() {
   if (loadError) {
     return (
       <div>
-        Error loading Google Maps: {String(loadError)}<br />
+        Error cargando Google Maps: {String(loadError)}<br />
         (Check key, billing, domain restrictions, and that the Visualization, Drawing & Places libraries are enabled.)
       </div>
     );
   }
-  if (!isLoaded) return <div>Loading map…</div>;
+  if (!isLoaded) return <div>Cargando mapa…</div>;
 
   const canRenderHeat =
     heatMode &&
@@ -348,7 +348,7 @@ export default function DrawMap() {
           }}
           title="Toggle heat-mode"
         >
-          {heatMode ? "Exit Heat Mode" : "Heat Mode"}
+          {heatMode ? "Salir Modo Calor" : "Modo Calor"}
         </button>
 
         <button
@@ -364,7 +364,7 @@ export default function DrawMap() {
           }}
           title="Toggle weather forecast overlay"
         >
-          {showWeather ? "Hide Weather" : "Weather Forecast"}
+          {showWeather ? "Ocultar Pronóstico" : "Pronóstico del tiempo"}
         </button>
 
         {showWeather && (
@@ -380,7 +380,7 @@ export default function DrawMap() {
               gap: 8,
             }}
           >
-            Opacity
+            Opacidad
             <input
               type="range"
               min={0.2}

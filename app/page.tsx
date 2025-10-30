@@ -45,19 +45,19 @@ export default function Home() {
               value="page1"
               className="cursor-pointer rounded-t-sm rounded-b-none px-6 py-1 w-full data-[state=active]:bg-[#e0efef] dark:data-[state=active]:bg-black data-[state=active]:text-black dark:data-[state=active]:text-white data-[state=inactive]:bg-neutral-300 dark:data-[state=inactive]:bg-neutral-800 data-[state=inactive]:text-neutral-700 dark:data-[state=inactive]:text-neutral-400 text-sm border-none transition-all"
             >
-              Map
+              Mapa
             </TabsTrigger>
             <TabsTrigger
               value="page2"
               className="cursor-pointer rounded-t-sm rounded-b-none px-6 py-1 w-full data-[state=active]:bg-[#e0efef] dark:data-[state=active]:bg-black data-[state=active]:text-black dark:data-[state=active]:text-white data-[state=inactive]:bg-neutral-300 dark:data-[state=inactive]:bg-neutral-800 data-[state=inactive]:text-neutral-700 dark:data-[state=inactive]:text-neutral-400 text-sm border-none transition-all"
             >
-              Stats
+              Estadísticas
             </TabsTrigger>
             <TabsTrigger
               value="page3"
               className="cursor-pointer rounded-t-sm rounded-b-none px-6 py-1 w-full data-[state=active]:bg-[#e0efef] dark:data-[state=active]:bg-black data-[state=active]:text-black dark:data-[state=active]:text-white data-[state=inactive]:bg-neutral-300 dark:data-[state=inactive]:bg-neutral-800 data-[state=inactive]:text-neutral-700 dark:data-[state=inactive]:text-neutral-400 border-none text-sm transition-all"
             >
-              Travels
+              Viajes
             </TabsTrigger>
           </TabsList>
         </div>
