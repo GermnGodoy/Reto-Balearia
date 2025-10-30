@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
-import { DollarSign, Users } from "lucide-react";
+import { DollarSign, Users, Download, FileText } from "lucide-react";
 import { useProgress } from "@/contexts/ProgressContext";
 import { TrendChart } from "@/components/charts/TrendChart";
 import Gauge from "@/components/ui/gauge";
@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 // ⬇️ usamos tu helper que ya devuelve precio, demanda y weights
 import { getData, type ModelWeights, type TimelineItem } from "@/lib/getData";
@@ -586,6 +587,33 @@ const { currentMeanData } = useTravelStats(progress, apiTravels);
           <InsightCards />
         </CollapsibleCardContent>
       </CollapsibleCard>
+
+      {/* Download Report */}
+      <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black">
+        <CardContent className="p-3 py-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                <FileText className="h-6 w-6 text-black dark:text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-black dark:text-white">
+                  Informe de Análisis
+                </h3>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  Generado el 30/12/2025
+                </p>
+              </div>
+            </div>
+            <Button asChild>
+              <a href="/reporte.pdf" download="Informe_Balearia.pdf">
+                <Download className="h-4 w-4 mr-2" />
+                Descargar Informe
+              </a>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tendencias (igual que antes) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
