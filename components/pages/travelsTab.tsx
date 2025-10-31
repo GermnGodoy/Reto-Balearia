@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  Download, // ✅ faltaba este import
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -83,13 +88,25 @@ export default function TravelsTab() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadTravels = async () => {
-      setIsLoading(true);
-      const data = await fetchActiveTravels(normalizeDate(date));
-      setTravelsData(data);
-      setIsLoading(false);
+      try {
+        setIsLoading(true);
+        const data = await fetchActiveTravels(normalizeDate(date));
+        if (!cancelled) setTravelsData(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Error fetching travels:", err);
+        if (!cancelled) setTravelsData([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     };
+
     loadTravels();
+    return () => {
+      cancelled = true;
+    };
   }, [date]);
 
   const handlePreviousDay = () => {
@@ -129,22 +146,36 @@ export default function TravelsTab() {
       </div>
 
       {isLoading ? (
-        <div className="py-12 text-center text-neutral-500 dark:text-neutral-400">Cargando viajes...</div>
+        <div className="py-12 text-center text-neutral-500 dark:text-neutral-400">
+          Cargando viajes...
+        </div>
       ) : travelsData.length === 0 ? (
         <div className="py-12 text-center text-neutral-500 dark:text-neutral-400">
           Ningún viaje encontrado para esta fecha
         </div>
       ) : (
-        <div className="max-w-7xl mx-auto grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {travelsData.map((travel, idx) => {
-            const href = buildStatsHref(travel, date);
-            return (
-              <Link key={idx} href={href} prefetch className="block">
-                <TravelCard travelData={travel} />
-              </Link>
-            );
-          })}
-        </div>
+        // ✅ envolver grid + botón en un único nodo (fragment)
+        <>
+          <div className="max-w-7xl mx-auto grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {travelsData.map((travel, idx) => {
+              const href = buildStatsHref(travel, date);
+              return (
+                <Link key={idx} href={href} prefetch className="block">
+                  <TravelCard travelData={travel} />
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end">
+            <Button asChild>
+              <a href="/reporte.pdf" download="Informe_Balearia.pdf">
+                <Download className="h-4 w-4 mr-2" />
+                Descargar Informe
+              </a>
+            </Button>
+          </div>
+        </>
       )}
     </div>
   );
