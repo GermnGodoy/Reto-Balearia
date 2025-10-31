@@ -114,7 +114,7 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
 ];
 
 // Weather tiles (OpenWeather)
-const WEATHER_TILE_URL = `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY`; //Please introduce your Open weather API Key
+const WEATHER_TILE_URL = `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=9c2c756bc3a6d8a6879c554991faf75f`; //Please introduce your Open weather API Key
 
 // IDs for custom map types
 const MAPTYPE_IDS = {
