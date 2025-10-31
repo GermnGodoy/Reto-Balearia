@@ -64,24 +64,25 @@ const DESTINATION_TO_AGG: Record<string, AggKey> = {
   DD10: "MENORCA_CIUTADELLA",
 };
 
+
+
 function buildStatsHref(travel: TravelData, day: Date | string) {
   const date = normalizeDate(day);
   const originKey = ORIGIN_TO_AGG[travel.origen] ?? "VALÈNCIA";
   const destinationKey = DESTINATION_TO_AGG[travel.destino] ?? "IBIZA";
   const shipCode = travel.codigo_buque ?? "SCA";
 
-  return {
-    pathname: "/",
-    query: {
-      tab: "page2",
-      date,
-      ship: shipCode,
-      origin: originKey,
-      destination: destinationKey,
-    },
-  } as const;
-}
+  // Build URL with query parameters
+  const params = new URLSearchParams({
+    tab: "page2",
+    date,
+    ship: shipCode,
+    origin: originKey,
+    destination: destinationKey,
+  });
 
+  return `/?${params.toString()}`;
+}
 export default function TravelsTab() {
   const [date, setDate] = useState<Date>(new Date());
   const [travelsData, setTravelsData] = useState<TravelData[]>([]);

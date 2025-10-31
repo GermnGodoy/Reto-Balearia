@@ -1,7 +1,6 @@
-"use client";
+﻿"use client";
 
 import { useSearchParams } from "next/navigation";
-
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { DollarSign, Users, Download, FileText } from "lucide-react";
@@ -28,52 +27,48 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 
-// ⬇️ helper que ya devuelve precio, demanda y weights
-import { getData, type ModelWeights, type TimelineItem } from "@/lib/getData";
+// ─────────────────── Tipos mínimos locales ───────────────────
+type ModelWeights = Record<string, number>;
+
+type TimelineItem = {
+  date?: string;
+  progress?: number;
+  data?: {
+    pred_price?: number | null;
+    pred_demand?: number | null;
+  };
+  weights?: ModelWeights | null;
+};
+
 import type { Travel, TimelineEntry } from "@/contexts/travelsContext";
 
-
-
-// ─────────────────── Utilidades ───────────────────
-const toTitle = (s: string) =>
-  s
-    .toUpperCase()
-    .split(/\s+/)
-    .map((w) =>
-      ["DE", "DEL", "LA", "EL", "LOS", "LAS", "Y"].includes(w)
-        ? w.toLowerCase()
-        : w[0] + w.slice(1).toLowerCase()
-    )
-    .join(" ");
+// ─────────────────── Config API ───────────────────
+const PREDICT_URL = "https://predict-298899681831.europe-west1.run.app/predict";
 
 // ─────────────────── Localizaciones agregadas → códigos ───────────────────
 type AggKey =
   | "BARCELONA"
   | "VALÈNCIA"
   | "DÉNIA"
-  | "IBIZA"                // Ibiza (Eivissa)
-  | "IBIZA_SANT_ANTONI"    // Ibiza (Sant Antoni)
+  | "IBIZA"
+  | "IBIZA_SANT_ANTONI"
   | "FORMENTERA"
-  | "MALLORCA"             // Mallorca (Palma)
-  | "MALLORCA_ALCÚDIA"     // Mallorca (Alcúdia)
-  | "MENORCA"              // Menorca (Maó)
-  | "MENORCA_CIUTADELLA";  // Menorca (Ciutadella)
+  | "MALLORCA"
+  | "MALLORCA_ALCÚDIA"
+  | "MENORCA"
+  | "MENORCA_CIUTADELLA";
 
 const LOCATIONS: Record<AggKey, { label: string; origin: string; destination: string }> = {
-  BARCELONA:             { label: "Barcelona",              origin: "OO01", destination: "DD09" },
-  "VALÈNCIA":            { label: "València",               origin: "OO04", destination: "DD06" },
-  "DÉNIA":               { label: "Dénia",                  origin: "OO06", destination: "DD08" },
-
-  IBIZA:                 { label: "Ibiza (Eivissa)",        origin: "OO05", destination: "DD07" },
-  IBIZA_SANT_ANTONI:     { label: "Ibiza (Sant Antoni)",    origin: "OO02", destination: "DD14" },
-
-  FORMENTERA:            { label: "Formentera (La Savina)", origin: "OO11", destination: "DD13" },
-
-  MALLORCA:              { label: "Mallorca (Palma)",       origin: "OO07", destination: "DD01" },
-  MALLORCA_ALCÚDIA:      { label: "Mallorca (Alcúdia)",     origin: "OO08", destination: "DD11" },
-
-  MENORCA:               { label: "Menorca (Maó)",          origin: "OO10", destination: "DD12" },
-  MENORCA_CIUTADELLA:    { label: "Menorca (Ciutadella)",   origin: "OO09", destination: "DD10" },
+  BARCELONA: { label: "Barcelona", origin: "OO01", destination: "DD09" },
+  "VALÈNCIA": { label: "València", origin: "OO04", destination: "DD06" },
+  "DÉNIA": { label: "Dénia", origin: "OO06", destination: "DD08" },
+  IBIZA: { label: "Ibiza (Eivissa)", origin: "OO05", destination: "DD07" },
+  IBIZA_SANT_ANTONI: { label: "Ibiza (Sant Antoni)", origin: "OO02", destination: "DD14" },
+  FORMENTERA: { label: "Formentera (La Savina)", origin: "OO11", destination: "DD13" },
+  MALLORCA: { label: "Mallorca (Palma)", origin: "OO07", destination: "DD01" },
+  MALLORCA_ALCÚDIA: { label: "Mallorca (Alcúdia)", origin: "OO08", destination: "DD11" },
+  MENORCA: { label: "Menorca (Maó)", origin: "OO10", destination: "DD12" },
+  MENORCA_CIUTADELLA: { label: "Menorca (Ciutadella)", origin: "OO09", destination: "DD10" },
 };
 
 const LOCATION_ORDER: AggKey[] = [
@@ -102,6 +97,8 @@ const DEFAULTS = {
   timeoutMs: 120000,
   originKey: "VALÈNCIA" as AggKey,
   destinationKey: "IBIZA" as AggKey,
+  tabla: "balearia_dataset_nuevo.LIMPIO_SINCOS",
+  get_input: true,
 };
 
 // ───────── Pesos → grafo para SHAPChart (escala a %; suma ≈ 100) ─────────
@@ -124,34 +121,29 @@ const weightsToGraphPercent = (w: ModelWeights) => {
   const links = entries.map(([k, v]) => ({
     source: k,
     target: "Prediction",
-    value: ((v as number) / safeTotal) * 100, // porcentaje
+    value: ((v as number) / safeTotal) * 100,
   }));
 
   return { nodes, links };
 };
 
-// ─────────────────── Componente ───────────────────
 export default function StatsTab() {
   const { progress } = useProgress();
-  
-  // Leer parámetros de la URL
   const searchParams = useSearchParams();
 
-  // Progress 0-9 → idx 0, 10-19 → idx 1, ... 90-100 → idx 9
   const currentDataIndex = Math.min(Math.floor(progress / 10), 9);
 
-  // Selectores con valores de URL o defaults
   const [selectedDate, setSelectedDate] = useState<string>(
-    searchParams.get('date') || DEFAULTS.date
+    searchParams.get("date") || DEFAULTS.date
   );
   const [shipCode, setShipCode] = useState<string>(
-    searchParams.get('ship') || DEFAULTS.shipCode
+    searchParams.get("ship") || DEFAULTS.shipCode
   );
   const [originKey, setOriginKey] = useState<AggKey>(
-    (searchParams.get('origin') as AggKey) || DEFAULTS.originKey
+    (searchParams.get("origin") as AggKey) || DEFAULTS.originKey
   );
   const [destinationKey, setDestinationKey] = useState<AggKey>(
-    (searchParams.get('destination') as AggKey) || DEFAULTS.destinationKey
+    (searchParams.get("destination") as AggKey) || DEFAULTS.destinationKey
   );
 
   useEffect(() => {
@@ -166,7 +158,6 @@ export default function StatsTab() {
     setDestinationKey((prev) => (prev === nextDestination ? prev : nextDestination));
   }, [searchParams]);
 
-  // Estado de predicción
   const [predPrice, setPredPrice] = useState<number | null>(null);
   const [predDemand, setPredDemand] = useState<number | null>(null);
   const [apiWeights, setApiWeights] = useState<ModelWeights | null>(null);
@@ -213,7 +204,6 @@ export default function StatsTab() {
     ];
   }, [timeline, originKey, destinationKey, selectedDate, shipCode, progress]);
 
-  // HistoricalData (≤100)
   const { priceHistoricalData, demandHistoricalData } = useMemo(() => {
     if (!timeline?.length) {
       return { priceHistoricalData: [], demandHistoricalData: [] };
@@ -224,7 +214,7 @@ export default function StatsTab() {
 
     for (const it of timeline) {
       if (typeof it.progress !== "number" || !Number.isFinite(it.progress)) continue;
-      if (it.progress > 100) continue; // >100 = futuro, fuera
+      if (it.progress > 100) continue; // >100 = futuro
       const p = Math.max(0, Math.min(100, Math.round(it.progress)));
 
       const price = typeof it.data?.pred_price === "number" ? it.data.pred_price : null;
@@ -262,51 +252,99 @@ export default function StatsTab() {
     return { priceHistoricalData: priceOut, demandHistoricalData: demandOut };
   }, [timeline, progress]);
 
-  const { currentMeanData } = useTravelStats(progress, apiTravels);
+  useTravelStats(progress, apiTravels);
   const timelineThreshold = 100;
 
-  // Llamada al endpoint con lo seleccionado
+  // 🔁 Llamada directa al endpoint con los nombres EXACTOS que espera el backend
   const fetchPrediction = async () => {
-    const originCode = LOCATIONS[originKey].origin;
-    const destinationCode = LOCATIONS[destinationKey].destination;
+    const originCode = LOCATIONS[originKey]?.origin;
+    const destinationCode = LOCATIONS[destinationKey]?.destination;
+
+    if (!originCode || !destinationCode) {
+      setError("Invalid origin or destination");
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setPredPrice(null);
+    setPredDemand(null);
+    setApiWeights(null);
+    setTimeline([]);
+
+    const payload = {
+      // ⬇️ campos que tu backend espera
+      origen: originCode,
+      destino: destinationCode,
+      fecha_salida_base: selectedDate, // ← ¡muy importante!
+      codigo_buque: shipCode,
+      n_days: DEFAULTS.n_days,
+      tabla: DEFAULTS.tabla,
+      get_input: DEFAULTS.get_input,
+      base_price: DEFAULTS.base_price,
+      min_price: DEFAULTS.min_price,
+      max_price: DEFAULTS.max_price,
+      capacity: DEFAULTS.capacity,
+      elasticity: DEFAULTS.elasticity,
+    };
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), DEFAULTS.timeoutMs);
+
     try {
-      const full = await getData(selectedDate, originCode, destinationCode, {
-        codigo_buque: shipCode,
-        n_days: DEFAULTS.n_days,
-        base_price: DEFAULTS.base_price,
-        min_price: DEFAULTS.min_price,
-        max_price: DEFAULTS.max_price,
-        capacity: DEFAULTS.capacity,
-        elasticity: DEFAULTS.elasticity,
-        timeoutMs: DEFAULTS.timeoutMs,
+      console.log("[API Call] POST /predict payload:", payload);
+
+      const res = await fetch(PREDICT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
-      // Normaliza progress por índice (0,10,20,...,90)
-      const timelineWithProgress = (full.timeline ?? []).map((item, index) => ({
-        ...item,
-        progress: index * 10,
-      }));
+      clearTimeout(id);
 
-      setTimeline(timelineWithProgress);
+      if (!res.ok) {
+        const txt = await res.text();
+        console.error("[API Error]", res.status, txt);
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
 
-      // Inicializa con el primer punto
-      const first = full.timeline?.[0];
-      setPredPrice(first && typeof first.data?.pred_price === "number" ? first.data.pred_price : null);
-      setPredDemand(first && typeof first.data?.pred_demand === "number" ? first.data.pred_demand : null);
-      setApiWeights(first?.weights ?? null);
+      const full = await res.json();
+      console.log(
+        "[API OK] response (safe view):",
+        typeof full === "string" ? full.slice(0, 400) : { ...full, timeline: `len ${full?.timeline?.length ?? 0}` }
+      );
 
-      // DEBUG opcional:
-      // console.log("[API] timeline len:", (full.timeline ?? []).length);
-      // console.log("[API] first.weights keys:", first?.weights ? Object.keys(first.weights) : []);
-    } catch (err) {
+      const tl: TimelineItem[] = Array.isArray(full?.timeline) ? full.timeline : [];
+
+      if (!tl.length) {
+        setError("La API no devolvió timeline.");
+        setTimeline([]);
+        setPredPrice(null);
+        setPredDemand(null);
+        setApiWeights(null);
+        return;
+      }
+
+      setTimeline(tl);
+
+      const first = tl[0];
+      const firstPrice = typeof first?.data?.pred_price === "number" ? first.data.pred_price : null;
+      const firstDemand = typeof first?.data?.pred_demand === "number" ? first.data.pred_demand : null;
+
+      setPredPrice(firstPrice);
+      setPredDemand(firstDemand);
+      // si viene weights globales en raíz:
+      setApiWeights(first?.weights ?? (full?.weights as ModelWeights | undefined) ?? null);
+    } catch (err: any) {
+      clearTimeout(id);
       setPredPrice(null);
       setPredDemand(null);
       setApiWeights(null);
       setTimeline([]);
-      const message = err instanceof Error ? err.message : String(err);
+      const message = err?.name === "AbortError" ? "Timeout de la petición" : (err instanceof Error ? err.message : String(err));
+      console.error("[API Exception]", message);
       setError(message);
     } finally {
       setLoading(false);
@@ -358,10 +396,10 @@ export default function StatsTab() {
     if (!timeline.length) return [];
     const mapped = timeline.map((item, index) => {
       const progressValue =
-        typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : index;
+        typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : index * 10;
       const priceValue = typeof item.data?.pred_price === "number" ? item.data.pred_price : null;
       const demandValue = typeof item.data?.pred_demand === "number" ? item.data.pred_demand : null;
-      const isFuture = progressValue > timelineThreshold;
+      const isFuture = (progressValue as number) > timelineThreshold;
 
       return {
         progress: progressValue,
@@ -383,9 +421,7 @@ export default function StatsTab() {
 
     if (firstFutureIndex > 0) {
       const previous = mapped[firstFutureIndex - 1];
-      if (previous) {
-        previous.priceFuture = previous.price;
-      }
+      if (previous) previous.priceFuture = previous.price;
     } else if (firstFutureIndex === 0 && mapped.length) {
       mapped[0].priceFuture = mapped[0].price;
     }
@@ -401,10 +437,6 @@ export default function StatsTab() {
     return Math.max(...numericProgress);
   }, [timelineChartData]);
 
-  const timelineFutureDelta = maxTimelineProgress != null ? Math.max(0, maxTimelineProgress - timelineThreshold) : 0;
-  const hasFutureBeyondThreshold = timelineFutureDelta > 0;
-
-  // ── Pesos del punto actual → SHAP ──
   const currentWeights: ModelWeights | null = useMemo(() => {
     if (timeline.length > 0 && currentDataIndex < timeline.length) {
       const w = timeline[currentDataIndex]?.weights;
@@ -510,7 +542,7 @@ export default function StatsTab() {
             <div className="mt-2">
               <Gauge
                 percentage={demandPercentage}
-                color={demandColor}
+                color="#2563eb"
                 value={predDemand != null ? Math.round(predDemand) : 0}
                 label="people"
               />
@@ -521,12 +553,12 @@ export default function StatsTab() {
         {/* Extra info */}
         <div className="flex justify-center pb-4">
           <div className="mt-2 grid grid-cols-2 gap-4 w-full max-w-xs">
-            <div className="flex flex-col items-center justify-center p-0 space-y-0 rounded-lg bg-neutral-50 dark:bg.black/50">
+            <div className="flex flex-col items-center justify-center p-0 space-y-0 rounded-lg bg-neutral-50 dark:bg-black/50">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
                 <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Precio</span>
               </div>
-              <div className="text-xl font-bold text.black dark:text-white">
+              <div className="text-xl font-bold text-black dark:text-white">
                 {predPrice != null ? `€${predPrice.toFixed(2)}` : "—"}
               </div>
             </div>
@@ -580,18 +612,18 @@ export default function StatsTab() {
 
           <SHAPChart
             key={`shap-${Math.floor(progress)}`}
-            data={shapData}
-            baseValue={0} // waterfall suma ≈100 (%)
+            data={useMemo(() => (apiWeights ? weightsToGraphPercent(apiWeights) : { nodes: [], links: [] }), [apiWeights])}
+            baseValue={0}
             className="h-[400px] w-full"
           />
 
           <InsightCards
-            progress={Math.floor(progress)} // 0..100 de la UI
+            progress={Math.floor(progress)}
             weightsTimeline={timeline.map((t, i) => ({
-              progress: i * 10, // 0,10,20,...,90
+              progress: i * 10,
               weights: t?.weights ?? null,
             }))}
-            weights={apiWeights} // fallback opcional
+            weights={apiWeights}
           />
         </CollapsibleCardContent>
       </CollapsibleCard>
@@ -609,12 +641,12 @@ export default function StatsTab() {
                 <p className="text-sm text-neutral-600 dark:text-neutral-400">Generado el 30/10/2025</p>
               </div>
             </div>
-            <Button asChild>
+            {/* <Button asChild>
               <a href="/reporte.pdf" download="Informe_Balearia.pdf">
                 <Download className="h-4 w-4 mr-2" />
                 Descargar Informe
               </a>
-            </Button>
+            </Button> */}
           </div>
         </CardContent>
       </Card>
@@ -638,7 +670,7 @@ export default function StatsTab() {
           </CardContent>
         </Card>
 
-        <Card className="border-neutral-200 dark:border-neutral-700 bg.white dark:bg-black">
+        <Card className="border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black">
           <CardHeader>
             <CardTitle className="text-black dark:text-white">Tendencia de la Demanda</CardTitle>
             <CardDescription className="text-neutral-600 dark:text-neutral-400">Próximos días</CardDescription>
